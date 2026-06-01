@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "tips",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["/Users/annaaustin/Documents/PracticalWisdom/app.py"],
+      "port": 5001
+    }
+  ]
+}
