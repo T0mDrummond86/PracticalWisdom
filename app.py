@@ -3,7 +3,7 @@ import sqlite3
 import os
 
 app = Flask(__name__)
-DB = os.path.join(os.path.dirname(__file__), "tips.db")
+DB = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "tips.db"))
 
 
 def get_db():
