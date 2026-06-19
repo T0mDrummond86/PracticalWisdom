@@ -1,28 +1,23 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Practical Wisdom</title>
-<script>
-  // Set the theme before the page paints (no flash). Saved choice, else system preference.
-  (function () {
-    try {
-      var t = localStorage.getItem("theme");
-      if (t !== "dark" && t !== "light")
-        t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
-      document.documentElement.setAttribute("data-theme", t);
-    } catch (e) {}
-  })();
-</script>
+<link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
 
 <header>
-  <span class="header-title">Practical Wisdom</span>
+  <div class="brand">
+    <img class="brand-icon" src="{{ url_for('static', filename='logo.svg') }}" alt="" width="32" height="32">
+    <span class="brand-word"><span class="bw-practical">Practical</span> <span class="bw-wisdom">Wisdom</span></span>
+  </div>
   <div style="display:flex;align-items:center;gap:10px">
-    <button id="theme-toggle" aria-label="Switch to dark mode" title="Toggle light / dark">🌙</button>
     <div id="auth-area"></div>
   </div>
 </header>
@@ -45,7 +40,7 @@
         <button class="view-btn" id="view-advise" style="display:none">Ask</button>
       </div>
       <div class="tb-group" id="tb-search">
-        <input id="search-input" type="text" placeholder="Search tips by word… (or ✨ Meaning)" />
+        <input id="search-input" type="text" placeholder="Search tips by keyword or meaning" />
         <button class="btn secondary" id="search-btn">Search</button>
         <button class="btn secondary" id="smart-search-btn" style="display:none" title="Find tips by meaning, not just matching tags">✨ Meaning</button>
       </div>
@@ -53,7 +48,7 @@
       <button class="btn secondary" id="favorites-btn" style="display:none">★ Favorites</button>
       <button class="btn secondary" id="suggest-tip-btn" style="display:none" title="Suggest a tip for review">✍ Suggest a tip</button>
       <div id="mgmt-wrap" style="display:none">
-        <button class="btn" id="mgmt-toggle">Tips &amp; Tags Management ▾</button>
+        <button class="btn secondary" id="mgmt-toggle">Tips &amp; Tags Management ▾</button>
         <div id="mgmt-menu" class="hidden">
           <button class="btn secondary" id="add-tip-btn">+ Add Tip</button>
           <button class="btn secondary" id="batch-import-btn">Batch import tips</button>

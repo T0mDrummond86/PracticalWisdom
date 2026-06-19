@@ -25,6 +25,20 @@
   --btn-secondary: #eeede6;
   --btn-secondary-hover: #e3e2d8;
 
+  /* Gold — the primary accent (the brand's antique gold) + cream from the logo */
+  --gold: #e5b64a;
+  --gold-hover: #f4d279;
+  --on-gold: #2a2008;
+  --cream: #f2eee3;
+
+  /* Dark-glass surface for secondary controls + the header */
+  --glass: rgba(34,38,24,0.05);
+  --glass-hover: rgba(34,38,24,0.09);
+  --glass-border: rgba(34,38,24,0.10);
+  --header-bg: rgba(250,249,245,0.82);
+  --header-border: rgba(34,38,24,0.08);
+  --status-red: #c0392b;
+
   /* Tier accents (primary/secondary tags) */
   --tier-primary-bd: #c4dcab;  --tier-primary-fg: #4a7a2a;
   --tier-secondary-bd: #e6d9bf; --tier-secondary-fg: #97712f; --tier-secondary-bg: #fdfbf5;
@@ -69,31 +83,38 @@
 [data-theme="dark"] {
   --accent-tint-bg: #2c3a1d;
   --accent-tint-fg: #b6d98a;
-  --accent-wash: #233016;
+  --accent-wash: rgba(255,255,255,0.05);
 
-  --bg: #0e1014;                 /* deepest canvas */
-  --surface: #171a20;            /* chrome */
-  --surface-2: #1e222a;          /* cards — lifts off the canvas */
-  --elevated: #252a33;           /* modals / popovers */
-  --input-bg: #111419;           /* inset, darker than its container */
-  --track-bg: #22262d;
-  --seg-active: #2f343d;
-  --btn-secondary: #272c34;
-  --btn-secondary-hover: #323843;
+  --bg: #0a1022;                 /* deep night sky */
+  --surface: #121a33;            /* chrome */
+  --surface-2: #1b2747;          /* cards — lift off the night sky */
+  --elevated: #243156;           /* modals / popovers */
+  --input-bg: #080d1c;           /* inset, deepest */
+  --track-bg: #18223e;
+  --seg-active: #2c3a64;
+  --btn-secondary: #1c2746;
+  --btn-secondary-hover: #28365c;
+
+  --glass: rgba(255,255,255,0.06);
+  --glass-hover: rgba(255,255,255,0.12);
+  --glass-border: rgba(255,255,255,0.10);
+  --header-bg: rgba(13,19,40,0.82);
+  --header-border: rgba(255,255,255,0.06);
+  --status-red: #d24536;
 
   --tier-primary-bd: #3c5a24;  --tier-primary-fg: #9fce6e;
   --tier-secondary-bd: #4a4226; --tier-secondary-fg: #cda85e; --tier-secondary-bg: #211d12;
 
   --danger: #ff8b7a; --danger-bg: #2a1c1c; --danger-bd: #6a3a3a;
-  --info-bg: #1a2030; --info-fg: #9bb4ff; --info-bd: #2c3a5e;
+  --info-bg: #14203a; --info-fg: #9bb4ff; --info-bd: #2e3e64;
 
-  --text: #e6e8ec;
-  --text-secondary: #a0a6b0;
-  --text-tertiary: #6f7682;
+  --text: #e7eaf3;
+  --text-secondary: #a2abc2;
+  --text-tertiary: #6e7894;
 
-  --border: #262b33;
-  --border-subtle: #1e232a;
-  --border-strong: #343b46;
+  --border: #26304e;
+  --border-subtle: #1b2440;
+  --border-strong: #3a4670;
 
   --shadow-card: 0 1px 3px rgba(0,0,0,0.35);
   --shadow-lift: 0 8px 24px rgba(0,0,0,0.45);
@@ -115,9 +136,12 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Dark-glass header: an extension of the canvas, not a saturated bar above it */
 header {
-  background: var(--brand);
-  color: #fff;
+  background: var(--header-bg);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--header-border);
+  color: var(--text);
   padding: 12px 24px;
   font-size: 1.25rem; font-weight: 600; letter-spacing: 0.02em;
   display: flex; align-items: center; justify-content: space-between;
@@ -176,13 +200,16 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 #tip-panel { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; min-height: 0; }
 
 #search-bar {
-  display: flex; gap: var(--s-3); padding: 10px var(--s-5); background: var(--surface);
+  display: flex; flex-wrap: wrap; gap: var(--s-3); row-gap: var(--s-2);
+  padding: 10px var(--s-5); background: var(--surface);
   border-bottom: 1px solid var(--border-subtle); align-items: center;
 }
-/* Toolbar groups: tighter spacing within a group than between groups. */
+/* Toolbar groups: tighter spacing within a group than between groups. The search group
+   keeps a real minimum width so it can't collapse and spill over the user group; when the
+   bar is too narrow to fit everything, the user group wraps to a second row instead. */
 .tb-group { display: flex; align-items: center; gap: var(--s-2); }
-#tb-search { flex: 1; min-width: 0; }
-#tb-user { flex: none; }
+#tb-search { flex: 1 1 240px; min-width: 220px; }
+#tb-user { flex: 0 0 auto; margin-left: auto; }
 
 #search-input {
   flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--r-sm);
@@ -192,15 +219,19 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 #search-input::placeholder { color: var(--text-tertiary); }
 #search-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
 
+/* Primary = gold accent */
 .btn {
-  background: var(--brand); color: #fff; border: none; border-radius: var(--r-sm);
-  padding: 8px 14px; cursor: pointer; font-size: 0.875rem; font-weight: 500;
+  background: var(--gold); color: var(--on-gold); border: 1px solid transparent; border-radius: var(--r-sm);
+  padding: 8px 14px; cursor: pointer; font-size: 0.875rem; font-weight: 600;
   transition: background var(--motion-fast) var(--ease), transform var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease);
 }
-.btn:hover { background: var(--brand-hover); }
+.btn:hover { background: var(--gold-hover); }
 .btn:active { transform: translateY(1px); }
-.btn.secondary { background: var(--btn-secondary); color: var(--text-secondary); }
-.btn.secondary:hover { background: var(--btn-secondary-hover); color: var(--text); }
+/* Secondary = dark glass */
+.btn.secondary {
+  background: var(--glass); color: var(--text-secondary); border: 1px solid var(--glass-border); font-weight: 500;
+}
+.btn.secondary:hover { background: var(--glass-hover); color: var(--text); }
 
 #tip-list { flex: 1; overflow-y: auto; padding: var(--s-4) var(--s-5); display: flex; flex-direction: column; gap: var(--s-2); }
 
@@ -323,14 +354,13 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
   transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
 }
 .view-btn:hover { color: var(--text); }
-.view-btn.active { background: var(--seg-active); color: var(--brand); font-weight: 600; box-shadow: var(--shadow-card); }
-[data-theme="dark"] .view-btn.active { color: var(--accent-tint-fg); }
+.view-btn.active { background: var(--seg-active); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
 
 /* ── Network ("constellation") view — dark in both themes by design ── */
 #network-view {
   flex: 1; position: relative; display: none; overflow: hidden;
   background:
-    radial-gradient(1100px 760px at 32% 22%, #1b2636 0%, #0c1118 55%, #05080d 100%);
+    radial-gradient(1100px 760px at 32% 22%, #1d2a52 0%, #101732 55%, #0a1022 100%);
 }
 #net-canvas, #net-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 #net-canvas { z-index: 1; }
@@ -348,9 +378,15 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
   filter: drop-shadow(0 0 7px currentColor) drop-shadow(0 0 3px currentColor);
 }
 .net-node.sel { stroke: #fff; stroke-width: 2; }
+/* the "next suggested tip" gently breathes so the eye is drawn to it */
+@keyframes pw-suggested-pulse {
+  from { stroke-width: 2.1; filter: drop-shadow(0 0 5px #ffcf33) drop-shadow(0 0 2px #ffcf33); }
+  to   { stroke-width: 3;   filter: drop-shadow(0 0 13px #ffcf33) drop-shadow(0 0 6px #ffcf33); }
+}
 .net-node.suggested {
   fill: #fff; stroke: #ffcf33; stroke-width: 2.5;
   filter: drop-shadow(0 0 9px #ffcf33) drop-shadow(0 0 4px #ffcf33);
+  animation: pw-suggested-pulse 1.8s ease-in-out infinite alternate;
 }
 
 #net-legend {
@@ -469,19 +505,27 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 .net-expr-empty { color: #8a96a6; font-size: 0.78rem; }
 
 /* ── Auth area in the header ── */
-.header-title { font-size: 1.25rem; font-weight: 600; }
+/* Brand lockup (icon + serif wordmark) in the header */
+.brand { display: flex; align-items: center; gap: 11px; }
+.brand-icon { width: 32px; height: 32px; display: block; flex: none; }
+.brand-word {
+  font-family: 'Fraunces', Georgia, 'Times New Roman', serif;
+  font-size: 1.32rem; font-weight: 600; letter-spacing: -0.005em; line-height: 1; white-space: nowrap;
+}
+.bw-practical { color: var(--gold); }
+.bw-wisdom { color: var(--cream); }
 #auth-area { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 400; }
 #auth-area .btn { padding: 6px 12px; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
-.auth-name { color: #e8f0df; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.google-btn { background: #fff; color: #3c4043; border: 1px solid #dadce0; font-weight: 500; }
-.google-btn:hover { background: #f3f4f4; }
-.auth-hint { color: #b8cca6; font-size: 0.78rem; }
+.auth-name { color: var(--text-secondary); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.google-btn { background: var(--glass); color: var(--text); border: 1px solid var(--glass-border); font-weight: 500; }
+.google-btn:hover { background: var(--glass-hover); }
+.auth-hint { color: var(--text-tertiary); font-size: 0.78rem; }
+/* Status = small coloured pill */
 .admin-badge {
-  background: var(--danger); color: #fff; padding: 3px 9px; border-radius: 12px;
+  background: var(--status-red); color: #fff; padding: 3px 9px; border-radius: var(--r-pill);
   font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
 }
-[data-theme="dark"] .admin-badge { background: #c0392b; color: #fff; }
 
 /* ── Tips & Tags Management dropdown (admin only) ── */
 #mgmt-wrap { position: relative; }
@@ -511,7 +555,7 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 .vote-score { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); min-width: 20px; text-align: center; }
 [data-theme="dark"] .vote-btn.up.on { color: #7ed957; }
 
-#favorites-btn.active { background: var(--brand); color: #fff; }
+#favorites-btn.active { background: var(--gold); color: var(--on-gold); border-color: var(--gold); }
 
 /* Vote row inside the dark network card */
 #net-card-actions { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
@@ -732,15 +776,6 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 #net-loading.hidden { display: none; }
 #net-loading .spinner { border-color: rgba(255,255,255,0.18); border-top-color: #cfe8b0; }
 .load-error { text-align: center; color: var(--danger); padding: 40px 20px; font-size: 0.9rem; }
-
-/* ── Theme toggle button in the header ── */
-#theme-toggle {
-  background: rgba(255,255,255,0.14); color: #fff; border: 1px solid rgba(255,255,255,0.22);
-  border-radius: 6px; width: 34px; height: 30px; cursor: pointer; font-size: 0.95rem;
-  display: inline-flex; align-items: center; justify-content: center;
-  transition: background var(--motion-fast) var(--ease);
-}
-#theme-toggle:hover { background: rgba(255,255,255,0.24); }
 
 /* ── Respect reduced-motion preferences ── */
 @media (prefers-reduced-motion: reduce) {

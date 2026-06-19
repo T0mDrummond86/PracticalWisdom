@@ -1938,10 +1938,16 @@
       card.className = "tip-card";
       const pct = tip.similarity != null ? `<span class="sim-badge">${Math.round(tip.similarity * 100)}%</span>` : "";
       card.innerHTML = `
+        <div class="vote-col">
+          <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Save to favorites" aria-label="Save to favorites">▲</button>
+          <span class="vote-score">${tip.score}</span>
+          <button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>
+        </div>
         <div class="tip-main">
           <div class="tip-content">${escHtml(tip.content)}</div>
           ${tip.tags.length ? `<div class="tip-tags">${tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("")}</div>` : ""}
         </div>${pct}`;
+      bindTipControls(card, tip);   // ▲ saves to favourites, like every other tip card
       wrap.appendChild(card);
     });
   }
@@ -2222,23 +2228,6 @@
   $("mgmt-toggle").onclick = e => { e.stopPropagation(); $("mgmt-menu").classList.toggle("hidden"); };
   $("mgmt-menu").addEventListener("click", closeMgmtMenu);  // close after choosing an action
   document.addEventListener("click", e => { if (!$("mgmt-wrap").contains(e.target)) closeMgmtMenu(); });
-
-  // ── Theme (light / dark) ──
-  // The initial theme is set by an inline <head> script (no flash); here we just toggle it.
-  function applyThemeButton() {
-    const dark = document.documentElement.getAttribute("data-theme") === "dark";
-    const btn = $("theme-toggle");
-    btn.textContent = dark ? "☀️" : "🌙";
-    btn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
-  }
-  $("theme-toggle").onclick = () => {
-    const dark = document.documentElement.getAttribute("data-theme") === "dark";
-    const next = dark ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    try { localStorage.setItem("theme", next); } catch (e) {}
-    applyThemeButton();
-  };
-  applyThemeButton();
 
   // Bootstrap: figure out the role first, then show the right view/controls.
   (async () => {
