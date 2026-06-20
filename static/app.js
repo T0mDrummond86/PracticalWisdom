@@ -364,13 +364,8 @@
     selectedTip = tip;
     pendingTags = [...tip.tags];
     $("detail-pane").classList.remove("hidden");
-    $("detail-content").textContent = tip.content;
-    if (tip.anecdote) {
-      $("detail-anecdote").textContent = tip.anecdote;
-      $("detail-anecdote-wrap").style.display = "block";
-    } else {
-      $("detail-anecdote-wrap").style.display = "none";
-    }
+    $("detail-content").value = tip.content;
+    $("detail-anecdote").value = tip.anecdote || "";
     renderPendingTags();
     renderTagPalette();
     $("save-status").textContent = "";
@@ -447,19 +442,19 @@
 
   $("new-tag-input").onkeydown = e => { if (e.key === "Enter") $("add-tag-btn").click(); };
 
+  // Saves the whole tip from the detail pane: text (content + anecdote) and its tags.
   $("save-tags-btn").onclick = async () => {
     if (!selectedTip) return;
-    if (!pendingHasPrimary()) {
-      $("save-status").style.color = "#c0392b";
-      $("save-status").textContent = "Add at least one primary tag before saving.";
-      return;
-    }
+    const fail = (msg) => { $("save-status").style.color = "#c0392b"; $("save-status").textContent = msg; };
+    const content = $("detail-content").value.trim();
+    if (!content) { fail("The tip can't be empty."); $("detail-content").focus(); return; }
+    if (!pendingHasPrimary()) { fail("Add at least one primary tag before saving."); return; }
+    const anecdote = $("detail-anecdote").value.trim();
+    // 1) tip text (this also refreshes the semantic embedding), then 2) tags.
+    const saved = await api("PUT", `/api/tips/${selectedTip.id}`, { content, anecdote });
+    if (saved.error) { fail(saved.error); return; }
     const updated = await api("PUT", `/api/tips/${selectedTip.id}/tags`, { tags: pendingTags });
-    if (updated.error) {
-      $("save-status").style.color = "#c0392b";
-      $("save-status").textContent = updated.error;
-      return;
-    }
+    if (updated.error) { fail(updated.error); return; }
     selectedTip = updated;
     $("save-status").style.color = "#5a8a2a";
     $("save-status").textContent = "Saved!";
@@ -583,19 +578,6 @@
     $("modal-content").value = "";
     $("modal-anecdote").value = "";
     $("modal-tags").value = "";
-    $("modal-status").textContent = "";
-    $("modal-overlay").classList.remove("hidden");
-    $("modal-content").focus();
-  };
-
-  $("edit-tip-btn").onclick = () => {
-    if (!selectedTip) return;
-    editingId = selectedTip.id;
-    $("modal-title").textContent = "Edit tip";
-    $("modal-save").textContent = "Update tip";
-    $("modal-tags-row").style.display = "none";  // tags are edited in the detail pane
-    $("modal-content").value = selectedTip.content;
-    $("modal-anecdote").value = selectedTip.anecdote || "";
     $("modal-status").textContent = "";
     $("modal-overlay").classList.remove("hidden");
     $("modal-content").focus();
