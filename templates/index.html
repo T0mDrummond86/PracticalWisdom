@@ -29,9 +29,11 @@
     </div>
     <div id="tag-list"></div>
   </div>
+  <div id="drawer-backdrop"></div>
 
   <div id="tip-panel">
     <div id="search-bar">
+      <button class="btn secondary" id="sidebar-toggle" aria-label="Filter by tag">☰ Filter</button>
       <div id="view-toggle">
         <button class="view-btn active" id="view-list">List</button>
         <button class="view-btn" id="view-network">Network</button>
@@ -132,7 +134,8 @@
   </div>
 
   <div id="detail-pane" class="hidden">
-    <div style="display:flex;justify-content:space-between;align-items:center">
+    <div class="detail-head">
+      <button class="detail-close" id="detail-close" aria-label="Back to list">‹ Back</button>
       <h2>Tip</h2>
       <button class="btn" id="delete-tip-btn" style="background:#c0392b">Delete</button>
     </div>

@@ -1880,6 +1880,9 @@
     $("sidebar").style.display = listPanes ? "" : "none";
     if (!listPanes) $("detail-pane").classList.add("hidden");
     if (v !== "favorites") closeFavAnalysis();   // the "explore this tip" pane is favorites-only
+    // Mobile: the tag sidebar is a slide-in drawer; its toggle only exists in List view.
+    $("sidebar-toggle").classList.toggle("avail", listPanes);
+    if (!listPanes) document.body.classList.remove("drawer-open");
     $("tip-list").style.display = v === "list" ? "flex" : "none";
     $("network-view").style.display = v === "network" ? "block" : "none";
     $("card-view").style.display = v === "cards" ? "flex" : "none";
@@ -2301,6 +2304,19 @@
   }
 
   $("view-favorites").onclick = () => setView("favorites");
+
+  // ── Mobile navigation: tag-filter drawer + full-screen detail overlay ──
+  $("sidebar-toggle").onclick = () => document.body.classList.toggle("drawer-open");
+  $("drawer-backdrop").onclick = () => document.body.classList.remove("drawer-open");
+  // picking a tag inside the drawer closes it so the filtered list is visible
+  $("sidebar").addEventListener("click", e => {
+    if (e.target.closest(".tag-btn")) document.body.classList.remove("drawer-open");
+  });
+  // "Back" dismisses the full-screen tip editor on phones
+  $("detail-close").onclick = () => {
+    $("detail-pane").classList.add("hidden");
+    document.querySelectorAll(".tip-card.selected").forEach(c => c.classList.remove("selected"));
+  };
 
   // Admin login modal
   $("admin-cancel").onclick = () => $("admin-overlay").classList.add("hidden");
