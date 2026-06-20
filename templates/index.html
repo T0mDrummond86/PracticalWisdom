@@ -134,15 +134,12 @@
   <div id="detail-pane" class="hidden">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2>Tip</h2>
-      <div style="display:flex;gap:6px">
-        <button class="btn secondary" id="edit-tip-btn">Edit</button>
-        <button class="btn" id="delete-tip-btn" style="background:#c0392b">Delete</button>
-      </div>
+      <button class="btn" id="delete-tip-btn" style="background:#c0392b">Delete</button>
     </div>
-    <div id="detail-content"></div>
-    <div id="detail-anecdote-wrap" style="display:none">
+    <textarea id="detail-content" placeholder="The tip…"></textarea>
+    <div id="detail-anecdote-wrap">
       <h2>Anecdote</h2>
-      <div id="detail-anecdote" style="font-size:0.9rem;line-height:1.6;white-space:pre-wrap;color:#444"></div>
+      <textarea id="detail-anecdote" placeholder="A short story or context for this tip…"></textarea>
     </div>
     <div id="video-editor">
       <h2>Further information — video</h2>
@@ -169,7 +166,7 @@
         <h2 style="margin-top:4px">Add from existing tags</h2>
         <div id="tag-palette"></div>
       </div>
-      <button class="btn" id="save-tags-btn">Save tags</button>
+      <button class="btn" id="save-tags-btn">Save</button>
       <div id="save-status"></div>
     </div>
   </div>
