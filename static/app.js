@@ -548,6 +548,7 @@
       const badge = (mode === "meaning" && tip.similarity != null)
         ? `<span class="sim-badge" title="How close this tip is in meaning">${Math.round(tip.similarity * 100)}%</span>`
         : "";
+      card.dataset.id = tip.id;
       card.innerHTML = `
         <div class="vote-col">
           <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Upvote (saves to favorites)" aria-label="Upvote">▲</button>
@@ -558,6 +559,10 @@
           <div class="tip-content">${escHtml(tip.content)}</div>
           ${tip.tags.length ? `<div class="tip-tags">${tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("")}</div>` : ""}
         </div>${badge}`;
+      if (currentView === "favorites") {
+        card.classList.toggle("selected", selectedFav?.id === tip.id);
+        card.onclick = () => openFavAnalysis(tip);
+      }
       bindTipControls(card, tip);
       panel.appendChild(card);
     });
@@ -1953,7 +1958,7 @@
       ? `<div class="analysis-hint">Pick an angle above to generate an analysis of this tip.</div>`
       : `<div class="analysis-hint">AI analysis isn't configured.</div>`;
     $("analysis-pane").classList.remove("hidden");
-    document.querySelectorAll("#fav-list .tip-card").forEach(c =>
+    document.querySelectorAll("#fav-list .tip-card, #search-results .tip-card").forEach(c =>
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id));
   }
 
