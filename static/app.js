@@ -2331,3 +2331,49 @@
     await loadMe();
     applyRolePermissions();
   })();
+
+  // ── PWA: register the service worker (production only) and prompt on updates ──
+  (function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    const isProd = document.documentElement.dataset.env === "production";
+    if (!isProd) {
+      // In dev, make sure no previously-registered SW lingers serving stale assets.
+      navigator.serviceWorker.getRegistrations().then(rs => rs.forEach(r => r.unregister()));
+      return;
+    }
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").then(reg => {
+        console.log("[PWA] service worker registered:", reg.scope);
+        reg.addEventListener("updatefound", () => {
+          const sw = reg.installing;
+          if (!sw) return;
+          sw.addEventListener("statechange", () => {
+            // A new version finished installing while an old one still controls the page.
+            if (sw.state === "installed" && navigator.serviceWorker.controller) showUpdateBanner(reg);
+          });
+        });
+      }).catch(err => console.error("[PWA] service worker registration failed:", err));
+
+      // When the waiting worker takes over, reload once to pick up the new version.
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (refreshing) return;
+        refreshing = true;
+        window.location.reload();
+      });
+    });
+
+    function showUpdateBanner(reg) {
+      if (document.getElementById("pwa-update")) return;
+      const bar = document.createElement("div");
+      bar.id = "pwa-update";
+      bar.innerHTML = `<span>A new version is available.</span>
+        <button type="button" id="pwa-reload">Reload</button>
+        <button type="button" id="pwa-dismiss" aria-label="Dismiss">✕</button>`;
+      document.body.appendChild(bar);
+      document.getElementById("pwa-reload").onclick = () => {
+        if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+      };
+      document.getElementById("pwa-dismiss").onclick = () => bar.remove();
+    }
+  })();

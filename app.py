@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for, make_response
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, make_response, send_from_directory
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -254,11 +254,28 @@ def embed_quietly(conn, tip_id, content, anecdote=""):
         app.logger.warning("embedding skipped for tip %s: %s", tip_id, e)
 
 
+def _pwa_enabled():
+    # Register the service worker only in production (so a stale SW never serves cached
+    # assets during local dev). ENABLE_SW=1 forces it on for testing the PWA locally.
+    return (not app.debug) or os.environ.get("ENABLE_SW") == "1"
+
+
 @app.get("/")
 def index():
     # Never cache the page itself, so edits show up on a normal refresh.
-    resp = make_response(render_template("index.html"))
+    resp = make_response(render_template("index.html", pwa_enabled=_pwa_enabled()))
     resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the site root so its scope can control the whole app — a /static/ URL
+    # could only control /static/. The file itself lives in static/.
+    resp = make_response(send_from_directory(app.static_folder, "sw.js"))
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"  # always revalidate the SW itself
     return resp
 
 
