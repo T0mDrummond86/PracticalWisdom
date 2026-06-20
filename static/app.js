@@ -1073,14 +1073,17 @@
     tips.forEach(t => { const p = primaryTagOf(t); if (p) counts[p] = (counts[p] || 0) + 1; });
     const tags = Object.keys(counts).sort();
     const cx = NET.W / 2, cy = NET.H / 2;
-    const R = Math.min(NET.W, NET.H) * 0.35;
+    // Elliptical ring matched to the viewport's aspect: a tall phone spreads clusters
+    // vertically, a wide desktop horizontally — so the cloud fills the space instead of
+    // sitting as a small circle with empty margins around it.
+    const Rx = NET.W * 0.32, Ry = NET.H * 0.30;
     const single = tags.length <= 1;
     NET.clusters = tags.map((tag, i) => {
       const ang = -Math.PI / 2 + (i / tags.length) * Math.PI * 2;
       return {
         tag, color: NET.colorMap[tag], count: counts[tag],
-        x: single ? cx : cx + Math.cos(ang) * R,
-        y: single ? cy : cy + Math.sin(ang) * R,
+        x: single ? cx : cx + Math.cos(ang) * Rx,
+        y: single ? cy : cy + Math.sin(ang) * Ry,
         radius: 24 + Math.sqrt(counts[tag]) * 9,
         labelEl: null,
       };
@@ -1284,6 +1287,8 @@
     applySelectionHighlight();
     showCard(n.tip);
     updateExprHint();
+    // On a phone, frame this tip's ego-network in the area above the bottom-sheet card.
+    if (isMobileNet()) fitTo(egoNodes());
     // Semantic neighbours power both the meaning-mode gold suggestion and related-link mode.
     const needsRelated = (suggestMode === "meaning" || NET.linkMode === "related") && embeddingsEnabled;
     if (needsRelated && !relatedCache[n.id]) {
@@ -1425,6 +1430,8 @@
     hideCard();
     drawCanvas();
     resetHint();
+    // On a phone, the card just freed its space — reframe to the whole (or focused) network.
+    if (isMobileNet()) fitTo(NET.focus ? focusedNodes() : NET.nodes);
   }
 
   // ── Selected-tip card: full text + tag-expression builder ──
@@ -1561,6 +1568,33 @@
     resetHint();
   }
 
+  function isMobileNet() {
+    return window.matchMedia("(max-width: 700px), (orientation: landscape) and (max-height: 520px)").matches;
+  }
+
+  // Screen-space to keep clear of nodes when framing: the top controls, and — on a phone,
+  // where the card is a bottom sheet — the open card itself. Lets fitTo frame the network
+  // into the *visible* area rather than centring it under the card / controls.
+  function viewInsets() {
+    const mob = isMobileNet();
+    const ins = { top: 16, right: 12, bottom: mob ? 14 : 50, left: 12 };
+    const ctrls = $("net-controls");
+    if (ctrls && !ctrls.classList.contains("hidden")) ins.top = ctrls.getBoundingClientRect().height + (mob ? 16 : 26);
+    const card = $("net-card");
+    if (mob && card && !card.classList.contains("hidden")) {
+      ins.bottom = Math.min(NET.H * 0.58, card.getBoundingClientRect().height + 16);
+    }
+    return ins;
+  }
+
+  // The selected node plus everything it currently links to (its ego-network).
+  function egoNodes() {
+    const ids = new Set([NET.selected, ...NET.linkTargets]);
+    if (NET.suggested != null) ids.add(NET.suggested);
+    const ns = NET.nodes.filter(n => ids.has(n.id));
+    return ns.length ? ns : NET.nodes.filter(n => n.id === NET.selected);
+  }
+
   function fitTo(nodes) {
     if (!nodes || !nodes.length) return;
     let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
@@ -1568,11 +1602,17 @@
       minx = Math.min(minx, n.x - n.r); miny = Math.min(miny, n.y - n.r);
       maxx = Math.max(maxx, n.x + n.r); maxy = Math.max(maxy, n.y + n.r);
     });
-    const pad = 80;
-    const bw = (maxx - minx) + pad * 2, bh = (maxy - miny) + pad * 2;
-    const k = Math.max(0.4, Math.min(2.4, Math.min(NET.W / bw, NET.H / bh)));
+    const ins = viewInsets();
+    const availW = Math.max(60, NET.W - ins.left - ins.right);
+    const availH = Math.max(60, NET.H - ins.top - ins.bottom);
+    // More horizontal room (the left/right region labels point outward and must not clip);
+    // less vertical, so the cloud still fills a tall phone screen.
+    const padX = Math.min(80, NET.W * 0.12), padY = Math.min(50, NET.H * 0.04);
+    const bw = (maxx - minx) + padX * 2, bh = (maxy - miny) + padY * 2;
+    const k = Math.max(0.35, Math.min(2.4, Math.min(availW / bw, availH / bh)));
     const ccx = (minx + maxx) / 2, ccy = (miny + maxy) / 2;
-    NET.transform = { k, x: NET.W / 2 - ccx * k, y: NET.H / 2 - ccy * k };
+    const tcx = ins.left + availW / 2, tcy = ins.top + availH / 2;   // centre of the clear area
+    NET.transform = { k, x: tcx - ccx * k, y: tcy - ccy * k };
     applyTransform();
   }
 
