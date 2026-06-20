@@ -142,7 +142,8 @@ header {
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--header-border);
   color: var(--text);
-  padding: 12px 24px;
+  /* Respect the iOS notch / status bar when launched as a standalone PWA. */
+  padding: max(12px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-right)) 12px max(24px, env(safe-area-inset-left));
   font-size: 1.25rem; font-weight: 600; letter-spacing: 0.02em;
   display: flex; align-items: center; justify-content: space-between;
 }
@@ -859,3 +860,28 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
   *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
   .tip-card:hover { transform: none; }
 }
+
+/* ── PWA "new version available" prompt — a small dark-glass pill, bottom-centre ── */
+#pwa-update {
+  position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom));
+  transform: translateX(-50%); z-index: 1000;
+  display: flex; align-items: center; gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 12px 10px 16px;
+  background: var(--header-bg);
+  -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  border: 1px solid var(--glass-border); border-radius: 999px;
+  color: var(--text); font-size: 0.9rem;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+}
+#pwa-update #pwa-reload {
+  border: none; cursor: pointer; font-weight: 600; font-size: 0.85rem;
+  background: var(--gold); color: var(--on-gold);
+  padding: 6px 14px; border-radius: 999px;
+}
+#pwa-update #pwa-reload:hover { background: var(--gold-hover); }
+#pwa-update #pwa-dismiss {
+  border: none; cursor: pointer; background: transparent;
+  color: var(--text-secondary); font-size: 0.95rem; line-height: 1; padding: 4px 6px;
+}
+#pwa-update #pwa-dismiss:hover { color: var(--text); }
