@@ -124,7 +124,18 @@
         <div id="cv-swipe-hint">← swipe to skip · swipe to save →</div>
         <div id="cv-foot">
           <button class="btn secondary" id="cv-restart">↻ Start over</button>
+          <button class="btn secondary" id="cv-change-course" aria-expanded="false">⤳ Change course</button>
           <button class="btn secondary" id="cv-suggest-mode" style="display:none" title="How the next tip is chosen: by shared tags, or by meaning"></button>
+        </div>
+        <div id="cv-redirect" class="hidden">
+          <div class="cv-redirect-label">Jump to a theme</div>
+          <div id="cv-redirect-groups"></div>
+          <div class="cv-redirect-label">Or describe where to explore next</div>
+          <div class="cv-redirect-row">
+            <input id="cv-redirect-input" type="text" placeholder="e.g. handling setbacks, staying focused…" />
+            <button class="btn" id="cv-redirect-go">Go</button>
+          </div>
+          <div id="cv-redirect-status"></div>
         </div>
       </div>
     </div>

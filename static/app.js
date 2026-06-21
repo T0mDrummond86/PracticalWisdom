@@ -1899,6 +1899,7 @@
 
   async function enterCardView() {
     cardBackStack = [];
+    toggleRedirect(false);
     $("cv-content").innerHTML = SPINNER;
     $("cv-anecdote").textContent = ""; $("cv-tags").innerHTML = ""; $("cv-actions").innerHTML = "";
     const ok = await loadTipData();
@@ -1972,6 +1973,67 @@
     NET.prevSelected = null;
     await api("POST", "/api/seen/reset", {});  // clear persisted history too (if signed in)
     enterCardView();
+  }
+
+  // ── Change course: let the reader redirect the trail by theme or by description ──
+  function toggleRedirect(force) {
+    const panel = $("cv-redirect");
+    const open = force === undefined ? panel.classList.contains("hidden") : force;
+    panel.classList.toggle("hidden", !open);
+    $("cv-change-course").setAttribute("aria-expanded", String(open));
+    if (open) { renderRedirectGroups(); $("cv-redirect-status").textContent = ""; }
+  }
+
+  // Chips for every primary group present in the loaded tips, coloured like the network.
+  function renderRedirectGroups() {
+    if (!Object.keys(NET.colorMap).length) buildColorMap(NET.nodes.map(m => m.tip));  // region colours
+    const groups = [...new Set(NET.nodes.map(m => primaryTagOf(m.tip)).filter(Boolean))].sort();
+    const wrap = $("cv-redirect-groups");
+    wrap.innerHTML = "";
+    groups.forEach(tag => {
+      const b = document.createElement("button");
+      b.className = "cv-group-chip";
+      b.textContent = tag;
+      const color = NET.colorMap[tag] || "var(--accent)";
+      b.style.borderColor = color; b.style.color = color;
+      b.onclick = () => jumpToGroup(tag);
+      wrap.appendChild(b);
+    });
+  }
+
+  // Move to a tip, remembering where we were so Back still works, and close the panel.
+  function jumpToCard(id) {
+    if (id == null || !NET.byId[id]) return false;
+    if (cardCurrent != null) { cardBackStack.push(cardCurrent); NET.prevSelected = cardCurrent; }
+    toggleRedirect(false);
+    showCardTip(id);
+    return true;
+  }
+
+  // Pick a tip from a primary group — a not-yet-seen one if possible, at random for variety.
+  function jumpToGroup(tag) {
+    const inGroup = NET.nodes.filter(m => primaryTagOf(m.tip) === tag && m.id !== cardCurrent);
+    let pool = inGroup.filter(m => !NET.visited.has(m.id));
+    if (!pool.length) pool = inGroup;
+    if (!pool.length) { $("cv-redirect-status").textContent = "No other tips in that theme yet."; return; }
+    jumpToCard(pool[Math.floor(Math.random() * pool.length)].id);
+  }
+
+  // Pick the tip that best matches a free-text direction (semantic if available, else keywords).
+  async function jumpToDescription(q) {
+    q = (q || "").trim();
+    if (!q) { $("cv-redirect-input").focus(); return; }
+    const status = $("cv-redirect-status");
+    status.style.color = "var(--text-tertiary)";
+    status.textContent = "Finding a tip about that…";
+    const url = (embeddingsEnabled ? "/api/tips/search?q=" : "/api/tips/fts?q=") + encodeURIComponent(q);
+    const res = await api("GET", url);
+    const results = (res && res.results) || [];
+    // Prefer the closest match that's loaded and not yet seen; fall back so we always move.
+    const hit = results.find(t => NET.byId[t.id] && !NET.visited.has(t.id))
+             || results.find(t => NET.byId[t.id]);
+    if (!hit) { status.style.color = "var(--danger)"; status.textContent = `Nothing matched “${q}”.`; return; }
+    jumpToCard(hit.id);
   }
 
   // ── Card-view swipe gestures (Tinder-style: drag right = save, left = skip) ──
@@ -2445,6 +2507,9 @@
   $("cv-next").onclick = cardNext;
   $("cv-prev").onclick = cardPrev;
   $("cv-restart").onclick = cardRestart;
+  $("cv-change-course").onclick = () => toggleRedirect();
+  $("cv-redirect-go").onclick = () => jumpToDescription($("cv-redirect-input").value);
+  $("cv-redirect-input").onkeydown = e => { if (e.key === "Enter") jumpToDescription($("cv-redirect-input").value); };
   initCardSwipe();
   $("net-suggest-mode").onclick = flipSuggestMode;
   $("cv-suggest-mode").onclick = flipSuggestMode;

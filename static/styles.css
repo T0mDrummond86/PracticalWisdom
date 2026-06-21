@@ -697,7 +697,32 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 #cv-prev:disabled, #cv-next:disabled { opacity: 0.4; cursor: default; }
 #cv-restart { font-size: 0.8rem; opacity: 0.8; }
 #cv-foot { display: flex; justify-content: center; align-items: center; gap: 12px; flex-wrap: wrap; }
+#cv-restart, #cv-change-course { font-size: 0.8rem; opacity: 0.9; }
 #cv-suggest-mode, #net-suggest-mode { font-size: 0.8rem; }
+
+/* ── Change course: redirect the trail by theme or by description ── */
+#cv-redirect {
+  display: flex; flex-direction: column; gap: 9px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  padding: 14px 16px;
+}
+#cv-redirect.hidden { display: none; }
+.cv-redirect-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-tertiary); font-weight: 600; }
+#cv-redirect-groups { display: flex; flex-wrap: wrap; gap: 7px; }
+.cv-group-chip {
+  background: transparent; border: 1px solid var(--border); border-radius: var(--r-pill);
+  padding: 6px 13px; font-size: 0.85rem; font-weight: 600; text-transform: capitalize; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease);
+}
+.cv-group-chip:hover { background: var(--accent-wash); }
+.cv-redirect-row { display: flex; gap: 8px; }
+#cv-redirect-input {
+  flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 9px 12px; font-size: 0.9rem; background: var(--input-bg); color: var(--text);
+}
+#cv-redirect-input:focus { outline: none; border-color: var(--accent); }
+#cv-redirect-go { flex: none; }
+#cv-redirect-status { font-size: 0.8rem; color: var(--text-tertiary); min-height: 1em; }
 
 /* ── Favorites list (vertical scroll) shown in Network/Cards views ── */
 #fav-list {
