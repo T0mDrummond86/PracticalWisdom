@@ -1211,24 +1211,26 @@
     const ctx = NET.ctx, dpr = NET.dpr, { x, y, k } = NET.transform;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, NET.cw, NET.ch);
-    // Overview: faint links between region bubbles, weighted by how many tips they share.
-    if (NET.level === "overview") {
-      if (!NET.regionEdges.length) return;
-      ctx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
-      ctx.lineCap = "round";
-      const maxW = NET.regionEdges.reduce((m, e) => Math.max(m, e.w), 1);
-      NET.regionEdges.forEach(e => {
-        const A = NET.clusterByTag[e.a], B = NET.clusterByTag[e.b];
-        if (!A || !B) return;
-        const t = e.w / maxW;
-        ctx.lineWidth = (1 + t * 5) / k;
-        ctx.strokeStyle = `rgba(255,255,255,${0.05 + t * 0.16})`;
-        ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
-      });
+    const sel = NET.selected;
+    // Nothing selected: in the overview, draw the faint inter-region links between bubbles.
+    if (sel == null) {
+      if (NET.level === "overview" && NET.regionEdges.length) {
+        ctx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
+        ctx.lineCap = "round";
+        const maxW = NET.regionEdges.reduce((m, e) => Math.max(m, e.w), 1);
+        NET.regionEdges.forEach(e => {
+          const A = NET.clusterByTag[e.a], B = NET.clusterByTag[e.b];
+          if (!A || !B) return;
+          const t = e.w / maxW;
+          ctx.lineWidth = (1 + t * 5) / k;
+          ctx.strokeStyle = `rgba(255,255,255,${0.05 + t * 0.16})`;
+          ctx.beginPath(); ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.stroke();
+        });
+      }
       return;
     }
-    const sel = NET.selected;
-    if (sel == null || (!NET.linkTargets.length && NET.suggested == null)) return;
+    // A tip is selected: draw the links from it to its associated tips (its ego-network).
+    if (!NET.linkTargets.length && NET.suggested == null) return;
     ctx.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
     ctx.lineCap = "round";
     const A = NET.byId[sel];
@@ -1332,8 +1334,7 @@
     applySelectionHighlight();
     showCard(n.tip);
     updateExprHint();
-    // On a phone, re-frame the whole network into the space above the bottom-sheet card so
-    // it stays fully visible (the selection + its links are highlighted within it).
+    // On a phone, keep the bubble map framed above the card (the tip sits on its bubble).
     if (isMobileNet()) frameCurrentLevel();
     // Semantic neighbours power both the meaning-mode gold suggestion and related-link mode.
     const needsRelated = (suggestMode === "meaning" || NET.linkMode === "related") && embeddingsEnabled;
@@ -1388,6 +1389,7 @@
       m.el.classList.toggle("sel", m.id === selId);
       m.el.classList.toggle("suggested", m.id === NET.suggested);
     });
+    if (isMobileNet()) layoutEgoAtRegions();   // place the tip + its links on the bubble map
     drawCanvas();
   }
 
@@ -1475,11 +1477,12 @@
     // NB: deliberately KEEP NET.visited / NET.prevSelected — deselecting must not wipe
     // the visited history, or re-selecting would walk back through already-seen tips.
     NET.nodes.forEach(m => m.el.classList.remove("dim", "sel", "suggested"));
+    if (isMobileNet()) NET.gNodes.style.display = "none";   // back to the bubbles-only overview
     NET.gNodeLabels.innerHTML = "";
     hideCard();
     drawCanvas();
     resetHint();
-    // On a phone, the card just freed its space — reframe to the focused region.
+    // On a phone, the card just freed its space — reframe the bubble map.
     if (isMobileNet()) frameCurrentLevel();
   }
 
@@ -1610,9 +1613,9 @@
   // Clicking a region: phones drill into it (overview ⇄ focus); desktop just spotlights it
   // within the full network (full ⇄ focus).
   function toggleFocus(tag) {
-    // Phones: a bubble tap expands the overview to the full network (no per-region zoom/hide);
-    // once expanded, region taps do nothing (Reset returns to the bubbles).
-    if (isMobileNet()) { if (NET.level === "overview") showFull(); return; }
+    // Phones: tap a bubble → land on a random tip from that region and show its links, while
+    // the bubble map stays put; you then hop tip-to-tip by tapping the linked tips.
+    if (isMobileNet()) { const n = pickRandomFromRegion(tag); if (n) selectNode(n); return; }
     (NET.level === "focus" && NET.focus === tag) ? showFull() : desktopFocus(tag);
   }
 
@@ -1626,6 +1629,36 @@
     Object.values(NET.legendRows).forEach(el => el.classList.remove("active"));
     fitTo(regionPoints());
     resetHint();
+  }
+
+  // Phones: a random tip from a region — the entry point when you tap a bubble.
+  function pickRandomFromRegion(tag) {
+    const ns = NET.nodes.filter(m => primaryTagOf(m.tip) === tag);
+    return ns.length ? ns[Math.floor(Math.random() * ns.length)] : null;
+  }
+
+  // Phones: show the selected tip + its linked tips as nodes sitting on their home region
+  // bubbles (everything else hidden), so the bubble map persists while you navigate tip-to-tip.
+  function layoutEgoAtRegions() {
+    NET.gNodes.style.display = "";
+    const ego = new Set([NET.selected, ...NET.linkTargets]);
+    if (NET.suggested != null) ego.add(NET.suggested);
+    const byRegion = {};
+    NET.nodes.forEach(m => {
+      if (!ego.has(m.id)) { m.el.style.display = "none"; return; }
+      m.el.style.display = "";
+      (byRegion[primaryTagOf(m.tip)] ||= []).push(m);
+    });
+    Object.entries(byRegion).forEach(([tag, ns]) => {
+      const c = NET.clusterByTag[tag] || { x: NET.W / 2, y: NET.H / 2 };
+      ns.forEach((m, i) => {
+        if (ns.length === 1) { m.x = c.x; m.y = c.y; return; }
+        const ang = -Math.PI / 2 + (i / ns.length) * Math.PI * 2;
+        const r = Math.max(c.radius * 0.66, 16);
+        m.x = c.x + Math.cos(ang) * r; m.y = c.y + Math.sin(ang) * r;
+      });
+    });
+    positionNodes();
   }
 
   // Focus: drill into one region — only its tips show.
@@ -1759,7 +1792,9 @@
     } else if (NET.level === "focus") {
       $("net-hint").innerHTML = `Exploring <b>${escHtml(NET.focus)}</b> — click a tip for its links · Reset to zoom out`;
     } else if (NET.level === "overview") {
-      $("net-hint").innerHTML = `Each bubble is a region — <b>tap one</b> to open the full network`;
+      $("net-hint").innerHTML = NET.selected != null
+        ? `Tap a <b>linked tip</b> to hop to it · <b>Reset</b> for the regions`
+        : `Tap a <b>region</b> to land on a tip · then follow its links`;
     } else if (isMobileNet()) {
       $("net-hint").innerHTML = `Tap a <b>tip</b> for its links · pinch to zoom · <b>Reset</b> for the overview`;
     } else {
