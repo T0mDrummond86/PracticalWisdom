@@ -1075,9 +1075,9 @@
     renderNetworkDom();
     renderLegend();
     NET.transform = { x: 0, y: 0, k: 1 };
-    // The full network is always present (phones included): no node is ever hidden, so a
-    // tip's links — including to other regions — are always reachable.
-    showFull();
+    // Phones open on the region-bubble overview; tapping a bubble expands to the full network
+    // (all regions at once — no zoom into one, nothing hidden). Desktop opens on the full network.
+    if (isMobileNet()) showOverview(); else showFull();
   }
 
   // One cluster per primary tag, arranged evenly on a ring around the centre.
@@ -1610,8 +1610,9 @@
   // Clicking a region: phones drill into it (overview ⇄ focus); desktop just spotlights it
   // within the full network (full ⇄ focus).
   function toggleFocus(tag) {
-    // On phones the whole network stays in view, so a region tap doesn't zoom/hide anything.
-    if (isMobileNet()) return;
+    // Phones: a bubble tap expands the overview to the full network (no per-region zoom/hide);
+    // once expanded, region taps do nothing (Reset returns to the bubbles).
+    if (isMobileNet()) { if (NET.level === "overview") showFull(); return; }
     (NET.level === "focus" && NET.focus === tag) ? showFull() : desktopFocus(tag);
   }
 
@@ -1744,8 +1745,10 @@
       loadTips("");
       loadSidebar();
       buildNetwork();
+    } else if (isMobileNet()) {
+      showOverview();   // phones: back to the region-bubble overview
     } else {
-      showFull();   // clear selection + focus, show the whole network
+      showFull();       // desktop: clear selection + focus, show the whole network
     }
   }
 
@@ -1754,10 +1757,11 @@
     if (activeTags.length) {
       $("net-hint").innerHTML = `Filtered to <b>#${escHtml(activeTags.join(" · #"))}</b> — <b>Reset view</b> brings back all tips`;
     } else if (NET.level === "focus") {
-      const tail = isMobileNet() ? "<b>Reset</b> for all regions" : "Reset to zoom out";
-      $("net-hint").innerHTML = `Exploring <b>${escHtml(NET.focus)}</b> — click a tip for its links · ${tail}`;
+      $("net-hint").innerHTML = `Exploring <b>${escHtml(NET.focus)}</b> — click a tip for its links · Reset to zoom out`;
+    } else if (NET.level === "overview") {
+      $("net-hint").innerHTML = `Each bubble is a region — <b>tap one</b> to open the full network`;
     } else if (isMobileNet()) {
-      $("net-hint").innerHTML = `Tap a <b>tip</b> for its links · pinch to zoom · drag to pan`;
+      $("net-hint").innerHTML = `Tap a <b>tip</b> for its links · pinch to zoom · <b>Reset</b> for the overview`;
     } else {
       $("net-hint").innerHTML = `Click a <b>region</b> to focus it · click a <b>node</b> for its links &amp; details · scroll to zoom · drag to pan`;
     }
