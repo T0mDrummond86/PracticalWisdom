@@ -185,24 +185,39 @@ def will_have_primary(conn, tag_names):
     return False
 
 
-def video_embed(url):
+def video_embed(url, start=0, end=0):
     """Turn a YouTube / Vimeo / Cloudflare Stream URL into an embeddable player src.
 
     Returns the iframe src, or None if the URL isn't a recognised video link. We only ever build
     the src from an id captured out of a known host, so the result is safe to drop into an iframe.
+
+    Optional start/end are whole seconds (0 = unset). YouTube honours both; Vimeo and Cloudflare
+    Stream honour the start only (a hard stop on those would need their JS player SDK).
     """
     url = (url or "").strip()
     if not url:
         return None
+    try:
+        start = max(0, int(start or 0))
+        end = max(0, int(end or 0))
+    except (TypeError, ValueError):
+        start = end = 0
     m = re.search(r"(?:youtube\.com/(?:watch\?v=|embed/|shorts/|v/)|youtu\.be/)([A-Za-z0-9_-]{6,})", url)
     if m:
-        return "https://www.youtube-nocookie.com/embed/%s?rel=0" % m.group(1)
+        src = "https://www.youtube-nocookie.com/embed/%s?rel=0" % m.group(1)
+        if start:
+            src += "&start=%d" % start
+        if end and end > start:
+            src += "&end=%d" % end
+        return src
     m = re.search(r"vimeo\.com/(?:video/)?(\d+)", url)
     if m:
-        return "https://player.vimeo.com/video/%s" % m.group(1)
+        src = "https://player.vimeo.com/video/%s" % m.group(1)
+        return src + ("#t=%ds" % start if start else "")
     m = re.search(r"cloudflarestream\.com/([A-Za-z0-9]+)", url)
     if m:
-        return "https://iframe.cloudflarestream.com/%s" % m.group(1)
+        src = "https://iframe.cloudflarestream.com/%s" % m.group(1)
+        return src + ("?startTime=%ds" % start if start else "")
     return None
 
 
@@ -227,6 +242,8 @@ def tip_with_tags(conn, tip_id):
         my_vote = v["value"] if v else 0
     favorited = my_vote == 1  # a tip is "favorited" exactly when the user has upvoted it
     video_url = tip["video_url"] or ""
+    video_start = tip["video_start"] or 0
+    video_end = tip["video_end"] or 0
     return {
         "id": tip["id"],
         "content": tip["content"],
@@ -236,7 +253,9 @@ def tip_with_tags(conn, tip_id):
         "my_vote": my_vote,
         "favorited": favorited,
         "video_url": video_url,
-        "video_embed": video_embed(video_url),
+        "video_start": video_start,
+        "video_end": video_end,
+        "video_embed": video_embed(video_url, video_start, video_end),
     }
 
 
@@ -487,14 +506,25 @@ def update_tip(tip_id):
 @app.post("/api/tips/<int:tip_id>/video")
 @admin_required
 def set_tip_video(tip_id):
-    """Attach (or clear) a YouTube / Vimeo / Cloudflare Stream video on a tip. Admin only."""
-    url = ((request.get_json(force=True) or {}).get("video_url") or "").strip()
+    """Attach (or clear) a YouTube / Vimeo / Cloudflare Stream video on a tip, with optional
+    start/stop times (seconds). Admin only."""
+    data = request.get_json(force=True) or {}
+    url = (data.get("video_url") or "").strip()
     if url and not video_embed(url):
         return jsonify({"error": "Unrecognised video link — use a YouTube, Vimeo, or Cloudflare Stream URL."}), 400
+
+    def _secs(v):
+        try:
+            return max(0, int(v or 0))
+        except (TypeError, ValueError):
+            return 0
+    start, end = (_secs(data.get("video_start")), _secs(data.get("video_end"))) if url else (0, 0)
+
     with get_db() as conn:
         if not conn.execute("SELECT id FROM tips WHERE id = ?", (tip_id,)).fetchone():
             return jsonify({"error": "tip not found"}), 404
-        conn.execute("UPDATE tips SET video_url = ? WHERE id = ?", (url, tip_id))
+        conn.execute("UPDATE tips SET video_url = ?, video_start = ?, video_end = ? WHERE id = ?",
+                     (url, start, end, tip_id))
         conn.commit()
         return jsonify(tip_with_tags(conn, tip_id))
 

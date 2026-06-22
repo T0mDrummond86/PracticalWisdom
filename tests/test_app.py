@@ -463,6 +463,34 @@ def test_set_and_clear_video(client, app_module):
     assert cleared["video_url"] == "" and cleared["video_embed"] is None
 
 
+def test_video_embed_times(app_module):
+    ve = app_module.video_embed
+    yt = "https://youtu.be/dQw4w9WgXcQ"
+    # YouTube honours both start and end
+    assert ve(yt, 30, 90) == "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=30&end=90"
+    assert ve(yt, 30, 0) == "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=30"
+    # an end that isn't after the start is ignored
+    assert ve(yt, 90, 30) == "https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?rel=0&start=90"
+    # Vimeo / Cloudflare honour the start only
+    assert ve("https://vimeo.com/123456789", 45, 99) == "https://player.vimeo.com/video/123456789#t=45s"
+    assert ve("https://customer-x.cloudflarestream.com/abcdef0123456789/watch", 45, 99) \
+        == "https://iframe.cloudflarestream.com/abcdef0123456789?startTime=45s"
+
+
+def test_set_video_with_times(client, app_module):
+    tid = add_tip(app_module, "Stretch daily", ["physical"])
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/video",
+                    json={"video_url": "https://youtu.be/dQw4w9WgXcQ", "video_start": 30, "video_end": 90},
+                    headers={"X-CSRF-Token": token}).get_json()
+    assert r["video_start"] == 30 and r["video_end"] == 90
+    assert r["video_embed"].endswith("?rel=0&start=30&end=90")
+    # clearing the URL also clears the times
+    cleared = client.post(f"/api/tips/{tid}/video", json={"video_url": ""},
+                          headers={"X-CSRF-Token": token}).get_json()
+    assert cleared["video_start"] == 0 and cleared["video_end"] == 0
+
+
 def test_llm_analyze_tip_parses(monkeypatch):
     import llm
     monkeypatch.setattr(llm, "_complete_json", lambda p, temperature=0.2: {"points": ["a", "", None, "b"]})

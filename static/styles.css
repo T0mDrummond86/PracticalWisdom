@@ -318,6 +318,14 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
   padding: 7px 10px; font-size: 0.85rem; background: var(--input-bg); color: var(--text);
 }
 #video-url-input:focus { outline: none; border-color: var(--accent); }
+#video-times { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; }
+#video-times label { display: flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); }
+#video-times input {
+  width: 64px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 5px 8px; font-size: 0.82rem; background: var(--input-bg); color: var(--text);
+}
+#video-times input:focus { outline: none; border-color: var(--accent); }
+#video-times-note { font-size: 0.7rem; color: var(--text-tertiary); flex: 1 1 100%; }
 #video-status { font-size: 0.8rem; min-height: 1em; }
 #video-remove-btn { align-self: flex-start; }
 #analysis-video:empty { display: none; }
