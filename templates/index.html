@@ -169,6 +169,11 @@
         <input id="video-url-input" type="text" placeholder="Paste a YouTube, Vimeo, or Cloudflare Stream link…" />
         <button class="btn" id="video-save-btn">Attach</button>
       </div>
+      <div id="video-times">
+        <label>Start <input id="video-start-input" type="text" inputmode="numeric" placeholder="0:00" /></label>
+        <label>End <input id="video-end-input" type="text" inputmode="numeric" placeholder="end" /></label>
+        <span id="video-times-note">m:ss or seconds · End is YouTube-only (Vimeo/Cloudflare use Start)</span>
+      </div>
       <div id="video-status"></div>
       <div id="video-preview"></div>
       <button class="btn secondary" id="video-remove-btn" style="display:none">Remove video</button>

@@ -382,8 +382,25 @@
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
       allowfullscreen></iframe></div>`;
   }
+  // "1:30" / "1:02:03" / "90" → whole seconds; blank → 0. And back the other way for display.
+  function parseTime(str) {
+    str = (str || "").trim();
+    if (!str) return 0;
+    const parts = str.split(":").map(p => parseInt(p, 10));
+    if (parts.some(isNaN)) return 0;
+    return parts.reduce((acc, p) => acc * 60 + p, 0);
+  }
+  function fmtTime(secs) {
+    secs = parseInt(secs, 10) || 0;
+    if (secs <= 0) return "";
+    const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60;
+    const pad = n => String(n).padStart(2, "0");
+    return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+  }
   function renderVideoEditor(tip) {
     $("video-url-input").value = tip.video_url || "";
+    $("video-start-input").value = fmtTime(tip.video_start);
+    $("video-end-input").value = fmtTime(tip.video_end);
     $("video-status").textContent = "";
     $("video-status").style.color = "var(--accent)";
     $("video-preview").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";
@@ -392,7 +409,9 @@
   $("video-save-btn").onclick = async () => {
     if (!selectedTip) return;
     const url = $("video-url-input").value.trim();
-    const r = await api("POST", `/api/tips/${selectedTip.id}/video`, { video_url: url });
+    const video_start = parseTime($("video-start-input").value);
+    const video_end = parseTime($("video-end-input").value);
+    const r = await api("POST", `/api/tips/${selectedTip.id}/video`, { video_url: url, video_start, video_end });
     if (r.error) { $("video-status").style.color = "var(--danger)"; $("video-status").textContent = r.error; return; }
     selectedTip = r;
     renderVideoEditor(r);
@@ -400,6 +419,7 @@
   };
   $("video-remove-btn").onclick = async () => {
     $("video-url-input").value = "";
+    $("video-start-input").value = ""; $("video-end-input").value = "";
     $("video-save-btn").click();
   };
 
