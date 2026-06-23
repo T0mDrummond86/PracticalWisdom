@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for, make_response
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, make_response, send_file
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -244,6 +244,13 @@ def tip_with_tags(conn, tip_id):
     video_url = tip["video_url"] or ""
     video_start = tip["video_start"] or 0
     video_end = tip["video_end"] or 0
+    # Admin-written analysis overrides, keyed by lens (only the non-empty ones).
+    analysis = {
+        r["lens"]: r["text"]
+        for r in conn.execute(
+            "SELECT lens, text FROM tip_analysis WHERE tip_id = ? AND text != ''", (tip_id,)
+        ).fetchall()
+    }
     return {
         "id": tip["id"],
         "content": tip["content"],
@@ -256,6 +263,7 @@ def tip_with_tags(conn, tip_id):
         "video_start": video_start,
         "video_end": video_end,
         "video_embed": video_embed(video_url, video_start, video_end),
+        "analysis": analysis,
     }
 
 
@@ -438,21 +446,55 @@ def related_tips(tip_id):
 @app.post("/api/tips/<int:tip_id>/analyze")
 def analyze_tip_lens(tip_id):
     """Analyse one tip through a chosen lens (how to apply, when not to, opposing wisdom, common
-    misreadings, notable figures). On-demand — the caller picks the lens. Returns {"points": [...]}.
+    misreadings, notable figures). On-demand — the caller picks the lens.
+
+    If an admin has written text for this lens it's returned as {"text": ..., "custom": true}
+    (no LLM call). Otherwise the lens is generated on the fly as {"points": [...]}.
     """
-    if not llm.is_enabled():
-        return jsonify({"error": "AI analysis isn't configured (set GROQ_API_KEY)."}), 503
     lens = ((request.get_json(force=True) or {}).get("lens") or "").strip()
     if lens not in llm.ANALYSIS_LENSES:
         return jsonify({"error": "Unknown analysis option."}), 400
     with get_db() as conn:
         row = conn.execute("SELECT content FROM tips WHERE id = ?", (tip_id,)).fetchone()
-    if not row:
-        return jsonify({"error": "tip not found"}), 404
+        if not row:
+            return jsonify({"error": "tip not found"}), 404
+        override = conn.execute(
+            "SELECT text FROM tip_analysis WHERE tip_id = ? AND lens = ?", (tip_id, lens)
+        ).fetchone()
+    if override and override["text"].strip():
+        return jsonify({"text": override["text"], "custom": True})
+    if not llm.is_enabled():
+        return jsonify({"error": "AI analysis isn't configured (set GROQ_API_KEY)."}), 503
     try:
         return jsonify(llm.analyze_tip(row["content"], lens))
     except llm.LLMError as e:
         return jsonify({"error": "Analysis failed: %s" % e}), 502
+
+
+@app.put("/api/tips/<int:tip_id>/analysis")
+@admin_required
+def update_tip_analysis(tip_id):
+    """Set (or clear) the admin's own "choose an angle" text for a tip. Body:
+    {"analysis": {"apply": "...", "avoid": "", ...}}. Empty / missing lenses are cleared so the
+    reader falls back to on-demand AI generation for those angles. Admin only."""
+    overrides = (request.get_json(force=True) or {}).get("analysis") or {}
+    with get_db() as conn:
+        if not conn.execute("SELECT id FROM tips WHERE id = ?", (tip_id,)).fetchone():
+            return jsonify({"error": "tip not found"}), 404
+        for lens in llm.ANALYSIS_LENSES:
+            text = (overrides.get(lens) or "").strip()
+            if text:
+                conn.execute(
+                    "INSERT INTO tip_analysis (tip_id, lens, text) VALUES (?, ?, ?) "
+                    "ON CONFLICT(tip_id, lens) DO UPDATE SET text = excluded.text",
+                    (tip_id, lens, text),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM tip_analysis WHERE tip_id = ? AND lens = ?", (tip_id, lens)
+                )
+        conn.commit()
+        return jsonify(tip_with_tags(conn, tip_id))
 
 
 @app.post("/api/tips")
@@ -538,6 +580,31 @@ def delete_tip(tip_id):
         conn.execute("DELETE FROM tips WHERE id = ?", (tip_id,))
         conn.commit()
         return jsonify({"deleted": tip_id})
+
+
+@app.delete("/api/tips")
+@admin_required
+def clear_all_tips():
+    """Delete every tip. Cascades to its tags-links, votes, favorites, seen marks, embeddings
+    and angle overrides, and the FTS index is cleared by the AFTER DELETE trigger. The tag
+    vocabulary itself is kept. Irreversible — the UI double-confirms before calling this."""
+    with get_db() as conn:
+        n = conn.execute("SELECT COUNT(*) AS c FROM tips").fetchone()["c"]
+        conn.execute("DELETE FROM tips")
+        conn.commit()
+    return jsonify({"deleted": n})
+
+
+@app.delete("/api/tags")
+@admin_required
+def clear_all_tags():
+    """Delete the entire tag vocabulary. Cascades to remove every tip↔tag link, so the tips
+    themselves remain but lose their tags. Irreversible — the UI double-confirms."""
+    with get_db() as conn:
+        n = conn.execute("SELECT COUNT(*) AS c FROM tags").fetchone()["c"]
+        conn.execute("DELETE FROM tags")
+        conn.commit()
+    return jsonify({"deleted": n})
 
 
 @app.put("/api/tips/<int:tip_id>/tags")
@@ -676,6 +743,176 @@ def batch_commit():
         conn.commit()
 
     return jsonify({"imported": len(inserted), "skipped": skipped}), 201
+
+
+# ── Excel backup: export everything an admin has authored, and re-import it ──
+# (content, anecdote, tags + their tier, video + times, and the "choose an angle" text).
+# Votes / favorites are per-user activity, not authored content, so they're not included.
+# One row per tip; the lens columns map to llm.ANALYSIS_LENSES.
+EXPORT_BASE_COLUMNS = [
+    "ID", "Content", "Anecdote", "Primary tags", "Secondary tags",
+    "Video URL", "Video start (sec)", "Video end (sec)",
+]
+LENS_COLUMNS = [
+    ("apply", "How to apply it"),
+    ("avoid", "When not to apply it"),
+    ("opposing", "Opposing wisdom"),
+    ("misreadings", "Common misreadings"),
+    ("figures", "Notable figures"),
+]
+
+
+@app.get("/api/tips/export")
+@admin_required
+def export_tips():
+    """Stream every tip and its authored content as an .xlsx for offline backup."""
+    from openpyxl import Workbook
+    from io import BytesIO
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Tips"
+    ws.append(EXPORT_BASE_COLUMNS + [label for _, label in LENS_COLUMNS])
+
+    with get_db() as conn:
+        for tip in conn.execute("SELECT * FROM tips ORDER BY id").fetchall():
+            tid = tip["id"]
+            tagrows = conn.execute(
+                "SELECT t.name, t.tier FROM tags t JOIN tip_tags tt ON t.id = tt.tag_id "
+                "WHERE tt.tip_id = ? ORDER BY t.name", (tid,)
+            ).fetchall()
+            primary = ", ".join(r["name"] for r in tagrows if r["tier"] == "primary")
+            secondary = ", ".join(r["name"] for r in tagrows if r["tier"] == "secondary")
+            analysis = {
+                r["lens"]: r["text"]
+                for r in conn.execute(
+                    "SELECT lens, text FROM tip_analysis WHERE tip_id = ?", (tid,)
+                ).fetchall()
+            }
+            ws.append([
+                tid, tip["content"], tip["anecdote"] or "", primary, secondary,
+                tip["video_url"] or "", tip["video_start"] or 0, tip["video_end"] or 0,
+            ] + [analysis.get(lens, "") for lens, _ in LENS_COLUMNS])
+
+    # Roughly size the columns for readability.
+    widths = [6, 60, 50, 22, 22, 36, 16, 16] + [40] * len(LENS_COLUMNS)
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
+    ws.freeze_panes = "A2"
+
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    fname = "practical-wisdom-tips-%s.xlsx" % time.strftime("%Y%m%d")
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True, download_name=fname,
+    )
+
+
+def _split_tags(value):
+    """A cell of comma/semicolon-separated tag names → a clean lowercased list."""
+    return [t.strip().lower() for t in re.split(r"[;,]", str(value or "")) if t.strip()]
+
+
+def _cell_int(value):
+    try:
+        return max(0, int(float(value)))
+    except (TypeError, ValueError):
+        return 0
+
+
+@app.post("/api/tips/import")
+@admin_required
+def import_tips():
+    """Re-import an exported .xlsx. Tips are matched by exact content: an existing tip is
+    updated in place (so re-importing a backup is idempotent), a new one is created otherwise.
+    Returns {created, updated, skipped}."""
+    from openpyxl import load_workbook
+
+    upload = request.files.get("file")
+    if not upload:
+        return jsonify({"error": "No file uploaded."}), 400
+    try:
+        wb = load_workbook(upload, read_only=True, data_only=True)
+    except Exception:
+        return jsonify({"error": "Couldn't read that file — upload an .xlsx exported from here."}), 400
+    ws = wb.active
+    row_iter = ws.iter_rows(values_only=True)
+    header = next(row_iter, None)
+    if not header:
+        return jsonify({"error": "The spreadsheet is empty."}), 400
+    # Map header label → column index, so column order doesn't have to be exact.
+    col_of = {str(h).strip().lower(): i for i, h in enumerate(header) if h is not None}
+
+    def cell(row, *labels):
+        for label in labels:
+            i = col_of.get(label.lower())
+            if i is not None and i < len(row) and row[i] is not None:
+                return row[i]
+        return None
+
+    created = updated = skipped = 0
+    for_embed = []
+    with get_db() as conn:
+        for row in row_iter:
+            if row is None:
+                continue
+            content = str(cell(row, "Content") or "").strip()
+            primary = _split_tags(cell(row, "Primary tags"))
+            if not content or not primary:
+                skipped += 1  # need content and at least one primary tag
+                continue
+            anecdote = str(cell(row, "Anecdote") or "").strip()
+            video_url = str(cell(row, "Video URL") or "").strip()
+            vstart = _cell_int(cell(row, "Video start (sec)", "Video start"))
+            vend = _cell_int(cell(row, "Video end (sec)", "Video end"))
+            secondary = _split_tags(cell(row, "Secondary tags"))
+
+            existing = conn.execute("SELECT id FROM tips WHERE content = ?", (content,)).fetchone()
+            if existing:
+                tip_id = existing["id"]
+                conn.execute(
+                    "UPDATE tips SET anecdote = ?, video_url = ?, video_start = ?, video_end = ? WHERE id = ?",
+                    (anecdote, video_url, vstart, vend, tip_id),
+                )
+                conn.execute("DELETE FROM tip_tags WHERE tip_id = ?", (tip_id,))  # rebuild from the sheet
+                updated += 1
+            else:
+                cur = conn.execute(
+                    "INSERT INTO tips (content, anecdote, video_url, video_start, video_end) VALUES (?, ?, ?, ?, ?)",
+                    (content, anecdote, video_url, vstart, vend),
+                )
+                tip_id = cur.lastrowid
+                created += 1
+
+            for name in primary:
+                conn.execute("INSERT OR IGNORE INTO tip_tags (tip_id, tag_id) VALUES (?, ?)",
+                             (tip_id, get_or_create_tag(conn, name, tier="primary")))
+            for name in secondary:
+                conn.execute("INSERT OR IGNORE INTO tip_tags (tip_id, tag_id) VALUES (?, ?)",
+                             (tip_id, get_or_create_tag(conn, name, tier="secondary")))
+            for lens, label in LENS_COLUMNS:
+                text = str(cell(row, label, lens) or "").strip()
+                if text:
+                    conn.execute(
+                        "INSERT INTO tip_analysis (tip_id, lens, text) VALUES (?, ?, ?) "
+                        "ON CONFLICT(tip_id, lens) DO UPDATE SET text = excluded.text",
+                        (tip_id, lens, text),
+                    )
+                else:
+                    conn.execute("DELETE FROM tip_analysis WHERE tip_id = ? AND lens = ?", (tip_id, lens))
+            for_embed.append((tip_id, content, anecdote))
+
+        if embeddings.is_enabled() and for_embed:
+            try:
+                embeddings.store_many(conn, for_embed)
+            except Exception as e:  # best-effort: never let embedding break a restore
+                app.logger.warning("import embedding skipped (%d tips): %s", len(for_embed), e)
+        conn.commit()
+
+    return jsonify({"created": created, "updated": updated, "skipped": skipped})
 
 
 @app.post("/api/llm/suggest-tags")
@@ -1079,4 +1316,4 @@ def reset_seen():
 
 if __name__ == "__main__":
     init_db()
-    app.run(debug=True, port=5001)
+    app.run(debug=True, port=int(os.environ.get("PORT", "5001")))

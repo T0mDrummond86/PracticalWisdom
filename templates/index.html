@@ -4,6 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Practical Wisdom</title>
+<script>
+  // Apply the saved colour theme before first paint to avoid a flash of the default.
+  (function () {
+    try {
+      var t = localStorage.getItem("theme");
+      if (t === "light" || t === "medium" || t === "dark")
+        document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {}
+  })();
+</script>
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -63,6 +73,13 @@
           <button class="btn secondary" id="apply-tag-btn">Apply a tag to tips</button>
           <button class="btn secondary" id="manage-tags-btn">Delete tags</button>
           <button class="btn secondary" id="review-subs-btn">Review submissions</button>
+          <div class="mgmt-sep"></div>
+          <button class="btn secondary" id="export-xlsx-btn">⤓ Export all tips (Excel)</button>
+          <button class="btn secondary" id="import-xlsx-btn">⤒ Import tips from Excel…</button>
+          <input id="import-xlsx-file" type="file" accept=".xlsx" hidden>
+          <div class="mgmt-sep"></div>
+          <button class="btn secondary mgmt-danger" id="clear-tips-btn">🗑 Clear all tips…</button>
+          <button class="btn secondary mgmt-danger" id="clear-all-tags-btn">🗑 Clear all tags…</button>
         </div>
       </div>
       </div>
@@ -169,6 +186,13 @@
       <div id="video-status"></div>
       <div id="video-preview"></div>
       <button class="btn secondary" id="video-remove-btn" style="display:none">Remove video</button>
+    </div>
+    <div id="analysis-editor">
+      <h2>“Choose an angle” — your own text (optional)</h2>
+      <p id="analysis-editor-note">Write your own text for any angle. When set, readers see it in the Favorites “Explore this tip” pane instead of AI-generated analysis. Leave an angle blank to keep it AI-generated.</p>
+      <div id="analysis-editor-fields"></div>
+      <button class="btn" id="save-analysis-btn">Save angle text</button>
+      <div id="analysis-editor-status"></div>
     </div>
     <div id="tag-editor">
       <h2>Tags</h2>
@@ -386,6 +410,94 @@
     <div class="modal-actions">
       <button class="btn secondary" id="insights-regen" style="display:none">↻ Regenerate</button>
       <button class="btn" id="insights-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Help / How-to Modal -->
+<div class="overlay hidden" id="help-overlay">
+  <div class="modal" style="width:640px;max-width:96vw;max-height:92vh;overflow-y:auto">
+    <h2>How to use Practical Wisdom</h2>
+    <p class="insights-sub">A quick guide to finding your way around. Close this any time — you can reopen it from your account menu.</p>
+
+    <div class="help-section">
+      <h3>Finding tips</h3>
+      <ul class="help-list">
+        <li><strong>Switch views</strong> with the buttons at the top — <em>Network</em>, <em>Cards</em>, <em>Ask</em>, and <em>Favorites</em>.</li>
+        <li><strong>Search</strong> in the box up top. <em>Keyword</em> matches the words you type; <em>Meaning</em> finds tips that are similar in idea even when the words differ.</li>
+        <li><strong>Filter by tag</strong> — open the <em>☰ Filter</em> panel to narrow tips down to one or more tags.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Network view</h3>
+      <ul class="help-list">
+        <li>Tips appear as dots grouped into coloured themes. <strong>Tap a theme</strong> to focus it, or <strong>tap a dot</strong> to read that tip and see its links.</li>
+        <li><strong>Scroll to zoom, drag to pan.</strong> Use <em>Reset view</em> to zoom back out.</li>
+        <li>The glowing gold link points to a suggested next tip to explore.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Cards view</h3>
+      <ul class="help-list">
+        <li>Read one tip at a time. <strong>Next</strong> and <strong>Back</strong> move through them; on a touch screen, <strong>swipe right to save, left to skip</strong>.</li>
+        <li><strong>Change course</strong> lets you jump to a theme or describe in your own words where to explore next.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Ask for advice</h3>
+      <ul class="help-list">
+        <li>Describe a situation in your own words and get advice grounded in the most relevant tips — you'll see exactly which tips it drew on.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Saving &amp; exploring favourites</h3>
+      <ul class="help-list">
+        <li><strong>Upvote (▲)</strong> a tip to save it to your <em>Favorites</em>.</li>
+        <li>In Favorites, open a tip and pick an <strong>angle</strong> under “Explore this tip” to see it from different perspectives.</li>
+      </ul>
+    </div>
+
+    <div class="help-section">
+      <h3>Your account</h3>
+      <ul class="help-list">
+        <li>Click your name (top right) to open the account menu.</li>
+        <li><strong>Suggest a tip</strong> — share a piece of wisdom; an admin reviews it before it joins the collection.</li>
+        <li><strong>Appearance</strong> — switch between Light, Medium, and Dark.</li>
+      </ul>
+    </div>
+
+    <!-- Shown only to administrators (toggled in openHelp) -->
+    <div class="help-section help-admin" id="help-admin">
+      <h3>Admin tools</h3>
+      <p class="help-admin-note">You're signed in as an administrator — these tools are only visible to you.</p>
+      <ul class="help-list">
+        <li><strong>List view</strong> — the admin-only view for browsing and editing every tip.</li>
+        <li><strong>Editing a tip</strong> — click a tip in List view to open it. Edit its wording and anecdote, attach a <em>video</em> (with optional start/stop times), write your own <em>“choose an angle”</em> text, and manage its tags. Click <strong>Save</strong> to store everything at once.</li>
+        <li><strong>“Choose an angle” text</strong> — anything you write here is shown to readers in the Favorites “Explore this tip” pane instead of AI-generated text. Leave a box blank to keep that angle AI-generated.</li>
+        <li><strong>Tips &amp; Tags Management</strong> menu (top right when in List view):
+          <ul>
+            <li><em>Add Tip</em> — create a single tip.</li>
+            <li><em>Batch import tips</em> — paste many tips at once, with #tags inline.</li>
+            <li><em>Import tags</em> — add allowed tags as primary or secondary.</li>
+            <li><em>Apply a tag to tips</em> — click tips to add or remove a tag quickly.</li>
+            <li><em>Delete tags</em> — remove tags from the allowed list.</li>
+            <li><em>Review submissions</em> — approve or reject community-suggested tips.</li>
+            <li><em>Export all tips (Excel)</em> — download everything to a spreadsheet for backup.</li>
+            <li><em>Import tips from Excel</em> — load a spreadsheet back in to refill the database (matched by tip text, so re-importing won't duplicate).</li>
+            <li><em>Clear all tips</em> — permanently delete every tip at once (tag names are kept). This cannot be undone, so export a backup first.</li>
+            <li><em>Clear all tags</em> — permanently delete the entire tag list and unlink every tip from its tags (the tips themselves stay). This cannot be undone.</li>
+          </ul>
+        </li>
+        <li><strong>Signing in / out of admin</strong> — use <em>Admin sign-in</em> and <em>Exit admin mode</em> in your account menu.</li>
+      </ul>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn" id="help-close">Got it</button>
     </div>
   </div>
 </div>

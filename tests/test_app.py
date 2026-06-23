@@ -525,6 +525,182 @@ def test_analyze_success(client, app_module, monkeypatch):
     assert r.status_code == 200 and r.get_json()["points"] == ["one", "two"]
 
 
+def test_analysis_override_save_and_read(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    r = client.put(f"/api/tips/{tid}/analysis",
+                   json={"analysis": {"apply": "Wait for the kettle.", "avoid": "  "}},
+                   headers={"X-CSRF-Token": token}).get_json()
+    # only the non-empty lens is stored, and it comes back on the tip payload
+    assert r["analysis"] == {"apply": "Wait for the kettle."}
+
+
+def test_analysis_override_returned_without_llm(client, app_module):
+    # No LLM configured (default in tests) — an admin override must still be served.
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"apply": "Just breathe."}},
+               headers={"X-CSRF-Token": token})
+    r = client.post(f"/api/tips/{tid}/analyze", json={"lens": "apply"}, headers={"X-CSRF-Token": token})
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["custom"] is True and body["text"] == "Just breathe."
+    # a lens with no override still needs the LLM, so it 503s
+    assert client.post(f"/api/tips/{tid}/analyze", json={"lens": "avoid"},
+                       headers={"X-CSRF-Token": token}).status_code == 503
+
+
+def test_analysis_override_beats_llm(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.llm, "is_enabled", lambda: True)
+    monkeypatch.setattr(app_module.llm, "analyze_tip", lambda content, lens: {"points": ["ai"]})
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"apply": "Curated."}},
+               headers={"X-CSRF-Token": token})
+    assert client.post(f"/api/tips/{tid}/analyze", json={"lens": "apply"},
+                       headers={"X-CSRF-Token": token}).get_json()["text"] == "Curated."
+    # an un-overridden lens falls through to the (mocked) LLM
+    assert client.post(f"/api/tips/{tid}/analyze", json={"lens": "avoid"},
+                       headers={"X-CSRF-Token": token}).get_json()["points"] == ["ai"]
+
+
+def test_analysis_override_clear(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"apply": "x"}},
+               headers={"X-CSRF-Token": token})
+    cleared = client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"apply": ""}},
+                         headers={"X-CSRF-Token": token}).get_json()
+    assert cleared["analysis"] == {}
+
+
+def test_analysis_override_requires_admin(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    r = client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"apply": "x"}},
+                   headers={"X-CSRF-Token": get_csrf(client)})
+    assert r.status_code == 403
+
+
+def test_clear_all_tips_requires_admin(client, app_module):
+    add_tip(app_module, "one", ["moral"])
+    r = client.delete("/api/tips", headers={"X-CSRF-Token": get_csrf(client)})
+    assert r.status_code == 403
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM tips").fetchone()["c"] == 1  # untouched
+
+
+def test_clear_all_tips_wipes_everything(client, app_module):
+    t1 = add_tip(app_module, "one", ["moral"])
+    add_tip(app_module, "two", ["moral", "calm"])
+    token = login_admin(client)
+    client.put(f"/api/tips/{t1}/analysis", json={"analysis": {"apply": "x"}},
+               headers={"X-CSRF-Token": token})
+    r = client.delete("/api/tips", headers={"X-CSRF-Token": token})
+    assert r.status_code == 200 and r.get_json()["deleted"] == 2
+    assert client.get("/api/tips").get_json() == []
+    with app_module.get_db() as conn:  # per-tip rows cascade away
+        assert conn.execute("SELECT COUNT(*) c FROM tips").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) c FROM tip_tags").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) c FROM tip_analysis").fetchone()["c"] == 0
+        # the tag vocabulary is kept
+        assert conn.execute("SELECT COUNT(*) c FROM tags").fetchone()["c"] >= 1
+
+
+def test_clear_all_tags_requires_admin(client, app_module):
+    add_tip(app_module, "one", ["moral"])
+    r = client.delete("/api/tags", headers={"X-CSRF-Token": get_csrf(client)})
+    assert r.status_code == 403
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM tags").fetchone()["c"] == 1  # untouched
+
+
+def test_clear_all_tags_removes_vocab_and_links_but_keeps_tips(client, app_module):
+    add_tip(app_module, "one", ["moral", "calm"])
+    token = login_admin(client)
+    r = client.delete("/api/tags", headers={"X-CSRF-Token": token})
+    assert r.status_code == 200 and r.get_json()["deleted"] == 2
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM tags").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) c FROM tip_tags").fetchone()["c"] == 0
+        assert conn.execute("SELECT COUNT(*) c FROM tips").fetchone()["c"] == 1  # tips remain
+
+
+def test_export_requires_admin(client):
+    assert client.get("/api/tips/export").status_code == 403
+
+
+def test_export_xlsx_contains_tip_data(client, app_module):
+    from io import BytesIO
+    from openpyxl import load_workbook
+    tid = add_tip(app_module, "Be patient", ["moral", "calm"])  # moral=primary, calm=secondary
+    token = login_admin(client)
+    client.post(f"/api/tips/{tid}/video",
+                json={"video_url": "https://youtu.be/dQw4w9WgXcQ", "video_start": 30, "video_end": 90},
+                headers={"X-CSRF-Token": token})
+    client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"apply": "Wait for it."}},
+               headers={"X-CSRF-Token": token})
+    r = client.get("/api/tips/export")
+    assert r.status_code == 200
+    assert r.headers["Content-Type"].startswith("application/vnd.openxmlformats")
+    ws = load_workbook(BytesIO(r.data)).active
+    header = [c.value for c in ws[1]]
+    row = next(rw for rw in ws.iter_rows(min_row=2, values_only=True) if rw[1] == "Be patient")
+    rec = dict(zip(header, row))
+    assert rec["Primary tags"] == "moral" and rec["Secondary tags"] == "calm"
+    assert rec["Video URL"].endswith("dQw4w9WgXcQ")
+    assert rec["Video start (sec)"] == 30 and rec["Video end (sec)"] == 90
+    assert rec["How to apply it"] == "Wait for it."
+
+
+def test_import_requires_admin(client):
+    from io import BytesIO
+    r = client.post("/api/tips/import", data={"file": (BytesIO(b"x"), "a.xlsx")},
+                    headers={"X-CSRF-Token": get_csrf(client)}, content_type="multipart/form-data")
+    assert r.status_code == 403
+
+
+def test_import_xlsx_roundtrip_is_idempotent(client, app_module):
+    from io import BytesIO
+    tid = add_tip(app_module, "Be patient", ["moral", "calm"])
+    token = login_admin(client)
+    client.put(f"/api/tips/{tid}/analysis", json={"analysis": {"avoid": "Not in a fire."}},
+               headers={"X-CSRF-Token": token})
+    data = client.get("/api/tips/export").data
+    r = client.post("/api/tips/import", data={"file": (BytesIO(data), "backup.xlsx")},
+                    headers={"X-CSRF-Token": token}, content_type="multipart/form-data")
+    body = r.get_json()
+    assert body["created"] == 0 and body["updated"] == 1  # matched by content, updated in place
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM tips").fetchone()["c"] == 1  # no duplicate
+        assert conn.execute("SELECT text FROM tip_analysis WHERE tip_id=? AND lens='avoid'",
+                            (tid,)).fetchone()["text"] == "Not in a fire."
+
+
+def test_import_xlsx_creates_new_tips(client, app_module):
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook(); ws = wb.active
+    ws.append(["ID", "Content", "Anecdote", "Primary tags", "Secondary tags",
+               "Video URL", "Video start (sec)", "Video end (sec)",
+               "How to apply it", "When not to apply it", "Opposing wisdom",
+               "Common misreadings", "Notable figures"])
+    ws.append([1, "Sleep well", "rest matters", "health", "habit", "", 0, 0,
+               "Before a big day", "", "", "", ""])
+    ws.append([2, "", "no content -> skipped", "x"])
+    buf = BytesIO(); wb.save(buf); buf.seek(0)
+    token = login_admin(client)
+    r = client.post("/api/tips/import", data={"file": (buf, "new.xlsx")},
+                    headers={"X-CSRF-Token": token}, content_type="multipart/form-data")
+    body = r.get_json()
+    assert body["created"] == 1 and body["skipped"] == 1
+    with app_module.get_db() as conn:
+        tip = conn.execute("SELECT id, anecdote FROM tips WHERE content='Sleep well'").fetchone()
+        assert tip["anecdote"] == "rest matters"
+        assert conn.execute("SELECT text FROM tip_analysis WHERE tip_id=? AND lens='apply'",
+                            (tip["id"],)).fetchone()["text"] == "Before a big day"
+        assert conn.execute("SELECT tier FROM tags WHERE name='habit'").fetchone()["tier"] == "secondary"
+
+
 def test_my_submissions_anonymous_is_empty(client):
     assert client.get("/api/submissions/mine").get_json() == {"submissions": []}
 
