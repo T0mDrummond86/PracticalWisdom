@@ -4,3 +4,4 @@ Authlib
 python-dotenv
 requests
 fastembed   # local sentence embeddings (semantic search / related / advice retrieval)
+openpyxl    # Excel (.xlsx) batch export / import of tips

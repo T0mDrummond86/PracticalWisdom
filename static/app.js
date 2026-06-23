@@ -21,6 +21,22 @@
   let suggestMode = (() => { try { return localStorage.getItem("suggestMode") || "meaning"; } catch (e) { return "meaning"; } })();
   const relatedCache = {};   // tip id -> [{tip_id, score}] from /api/tips/<id>/related
 
+  // Colour theme: "dark" (default) | "medium" | "light". Persisted; applied to <html>.
+  const THEMES = ["light", "medium", "dark"];
+  let theme = (() => {
+    try { const t = localStorage.getItem("theme"); return THEMES.includes(t) ? t : "dark"; }
+    catch (e) { return "dark"; }
+  })();
+  function applyTheme(t) {
+    if (!THEMES.includes(t)) return;
+    theme = t;
+    document.documentElement.setAttribute("data-theme", t);
+    try { localStorage.setItem("theme", t); } catch (e) {}
+    document.querySelectorAll(".theme-opt").forEach(b =>
+      b.classList.toggle("active", b.dataset.themeChoice === t));
+  }
+  applyTheme(theme);   // sync <html> with the persisted choice as soon as the script runs
+
   const $ = id => document.getElementById(id);
 
   const SPINNER = '<div class="loading-wrap"><div class="spinner"></div></div>';
@@ -98,31 +114,66 @@
     const el = $("auth-area");
     const parts = [];
     if (currentUser) {
+      // Name is a trigger; clicking it opens the account dropdown. "Suggest a tip"
+      // and the appearance (theme) switcher live inside it, as do account actions.
+      const name = escHtml(currentUser.name || currentUser.email || "Account");
+      const sub = currentUser.email && currentUser.name
+        ? `Signed in as <strong>${escHtml(currentUser.email)}</strong>` : `Signed in`;
+      const themeOpt = (val, label) =>
+        `<button class="theme-opt" type="button" data-theme-choice="${val}">${label}</button>`;
       parts.push(
-        (currentUser.picture ? `<img class="avatar" src="${currentUser.picture}" alt="" referrerpolicy="no-referrer">` : "") +
-        `<span class="auth-name">${escHtml(currentUser.name || currentUser.email || "Account")}</span>` +
-        `<button class="btn secondary" id="logout-btn">Sign out</button>`);
+        `<div class="account" id="account-wrap">` +
+          `<button class="account-trigger" id="account-trigger" aria-haspopup="true" aria-expanded="false">` +
+            (currentUser.picture ? `<img class="avatar" src="${currentUser.picture}" alt="" referrerpolicy="no-referrer">` : "") +
+            `<span class="auth-name">${name}</span>` +
+            `<span class="account-caret" aria-hidden="true">▾</span>` +
+          `</button>` +
+          `<div class="account-menu hidden" id="account-menu" role="menu">` +
+            `<div class="account-menu-header">${sub}</div>` +
+            `<button class="account-item" id="suggest-tip-btn" role="menuitem" title="Suggest a tip for review">✍ Suggest a tip</button>` +
+            `<button class="account-item" id="help-btn" role="menuitem">❔ Help &amp; how-to</button>` +
+            // Admin access lives here — you must be signed in first to reach it.
+            (isAdmin
+              ? `<button class="account-item account-item-admin" id="admin-logout-btn" role="menuitem"><span class="admin-badge">ADMIN</span> Exit admin mode</button>`
+              : `<button class="account-item" id="admin-open-btn" role="menuitem">⚙ Admin sign-in…</button>`) +
+            `<div class="account-menu-sep"></div>` +
+            `<div class="account-menu-label">Appearance</div>` +
+            `<div class="theme-seg" role="group" aria-label="Appearance">` +
+              themeOpt("light", "Light") + themeOpt("medium", "Medium") + themeOpt("dark", "Dark") +
+            `</div>` +
+            `<div class="account-menu-sep"></div>` +
+            `<button class="account-item" id="logout-btn" role="menuitem">Sign out</button>` +
+          `</div>` +
+        `</div>`);
     } else if (authEnabled) {
       parts.push(`<a class="btn google-btn" href="/login">Sign in with Google</a>`);
     }
-    if (currentUser) {   // a signed-in user can suggest a tip — sits next to Admin, top right
-      parts.push(`<button class="btn secondary" id="suggest-tip-btn" title="Suggest a tip for review">✍ Suggest a tip</button>`);
-    }
-    if (isAdmin) {
-      parts.push(`<span class="admin-badge" title="Administrator">ADMIN</span>` +
-        `<button class="btn secondary" id="admin-logout-btn">Exit admin</button>`);
-    } else {
-      parts.push(`<button class="btn secondary" id="admin-open-btn">Admin</button>`);
-    }
     el.innerHTML = parts.join("");
     if (currentUser) {
+      const trigger = $("account-trigger"), menu = $("account-menu");
+      trigger.onclick = e => {
+        e.stopPropagation();
+        const open = menu.classList.toggle("hidden");
+        trigger.setAttribute("aria-expanded", String(!open));
+      };
+      menu.querySelectorAll(".theme-opt").forEach(b =>
+        b.onclick = () => applyTheme(b.dataset.themeChoice));
       $("logout-btn").onclick = googleSignOut;
-      $("suggest-tip-btn").onclick = openSuggest;
+      $("suggest-tip-btn").onclick = () => { closeAccountMenu(); openSuggest(); };
+      $("help-btn").onclick = () => { closeAccountMenu(); openHelp(); };
+      // Admin sign-in / exit are now items inside the account dropdown.
+      if (isAdmin) $("admin-logout-btn").onclick = () => { closeAccountMenu(); adminSignOut(); };
+      else $("admin-open-btn").onclick = () => { closeAccountMenu(); openAdminModal(); };
+      applyTheme(theme);   // mark the active appearance option
     }
-    if (isAdmin) $("admin-logout-btn").onclick = adminSignOut;
-    else $("admin-open-btn").onclick = openAdminModal;
     const favTab = $("view-favorites");
     if (favTab) favTab.style.display = currentUser ? "" : "none";   // Favorites is a main view, signed-in only
+  }
+
+  function closeAccountMenu() {
+    const m = $("account-menu"), t = $("account-trigger");
+    if (m) m.classList.add("hidden");
+    if (t) t.setAttribute("aria-expanded", "false");
   }
 
   // Show/hide List view + management based on role, then render the right view.
@@ -370,6 +421,7 @@
     renderTagPalette();
     $("save-status").textContent = "";
     renderVideoEditor(tip);   // the admin's attach-a-video field + preview
+    renderAnalysisEditor(tip);   // the admin's "choose an angle" override text
     // highlight the matching card in the list (works for clicks and programmatic calls)
     document.querySelectorAll(".tip-card").forEach(c => {
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id);
@@ -414,6 +466,7 @@
     const r = await api("POST", `/api/tips/${selectedTip.id}/video`, { video_url: url, video_start, video_end });
     if (r.error) { $("video-status").style.color = "var(--danger)"; $("video-status").textContent = r.error; return; }
     selectedTip = r;
+    loadTips(activeTags.join(","));   // refresh the list so cards carry the saved video
     renderVideoEditor(r);
     $("video-status").textContent = url ? "Video attached." : "Video removed.";
   };
@@ -421,6 +474,45 @@
     $("video-url-input").value = "";
     $("video-start-input").value = ""; $("video-end-input").value = "";
     $("video-save-btn").click();
+  };
+
+  // ── "Choose an angle" overrides: admin-written text per lens (detail pane, List view) ──
+  // Order + labels mirror the #analysis-options buttons in the reader's analysis pane.
+  const LENS_FIELDS = [
+    ["apply", "How to apply it"],
+    ["avoid", "When not to apply it"],
+    ["opposing", "Opposing wisdom"],
+    ["misreadings", "Common misreadings"],
+    ["figures", "Notable figures who applied it"],
+  ];
+  function renderAnalysisEditor(tip) {
+    const overrides = tip.analysis || {};
+    $("analysis-editor-fields").innerHTML = LENS_FIELDS.map(([lens, label]) =>
+      `<label class="analysis-field">${escHtml(label)}` +
+      `<textarea data-lens="${lens}" placeholder="Leave blank to auto-generate with AI…">${escHtml(overrides[lens] || "")}</textarea>` +
+      `</label>`).join("");
+    $("analysis-editor-status").textContent = "";
+  }
+  // Read the current angle textareas into {lens: text}. Used by both the dedicated
+  // "Save angle text" button and the main Save (so neither silently drops the text).
+  function collectAnalysisOverrides() {
+    const analysis = {};
+    document.querySelectorAll("#analysis-editor-fields textarea").forEach(t => {
+      analysis[t.dataset.lens] = t.value.trim();
+    });
+    return analysis;
+  }
+  $("save-analysis-btn").onclick = async () => {
+    if (!selectedTip) return;
+    const status = $("analysis-editor-status");
+    const r = await api("PUT", `/api/tips/${selectedTip.id}/analysis`, { analysis: collectAnalysisOverrides() });
+    if (r.error) { status.style.color = "var(--danger)"; status.textContent = r.error; return; }
+    selectedTip = r;
+    loadTips(activeTags.join(","));   // refresh the list so cards carry the saved overrides
+    const n = Object.keys(r.analysis || {}).length;
+    status.style.color = "var(--accent)";
+    status.textContent = n ? `Saved — ${n} angle${n !== 1 ? "s" : ""} set manually.` : "Saved — all angles auto-generate.";
+    setTimeout(() => { status.textContent = ""; }, 2500);
   };
 
   function renderPendingTags() {
@@ -462,7 +554,8 @@
 
   $("new-tag-input").onkeydown = e => { if (e.key === "Enter") $("add-tag-btn").click(); };
 
-  // Saves the whole tip from the detail pane: text (content + anecdote) and its tags.
+  // Saves the whole tip from the detail pane: text (content + anecdote), its tags, AND the
+  // "choose an angle" override text — so the one prominent Save never silently drops a field.
   $("save-tags-btn").onclick = async () => {
     if (!selectedTip) return;
     const fail = (msg) => { $("save-status").style.color = "#c0392b"; $("save-status").textContent = msg; };
@@ -470,12 +563,13 @@
     if (!content) { fail("The tip can't be empty."); $("detail-content").focus(); return; }
     if (!pendingHasPrimary()) { fail("Add at least one primary tag before saving."); return; }
     const anecdote = $("detail-anecdote").value.trim();
-    // 1) tip text (this also refreshes the semantic embedding), then 2) tags.
+    // 1) tip text (this also refreshes the semantic embedding), then 2) tags, then 3) angle text.
     const saved = await api("PUT", `/api/tips/${selectedTip.id}`, { content, anecdote });
     if (saved.error) { fail(saved.error); return; }
     const updated = await api("PUT", `/api/tips/${selectedTip.id}/tags`, { tags: pendingTags });
     if (updated.error) { fail(updated.error); return; }
-    selectedTip = updated;
+    const withAngles = await api("PUT", `/api/tips/${selectedTip.id}/analysis`, { analysis: collectAnalysisOverrides() });
+    selectedTip = withAngles.error ? updated : withAngles;
     $("save-status").style.color = "#5a8a2a";
     $("save-status").textContent = "Saved!";
     setTimeout(() => { $("save-status").textContent = ""; }, 2000);
@@ -684,6 +778,75 @@
   };
   $("batch-cancel").onclick = () => $("batch-overlay").classList.add("hidden");
   $("batch-back-btn").onclick = () => showBatchStage("input");
+
+  // ── Excel backup: export everything, and re-import a backup to refill the database ──
+  $("export-xlsx-btn").onclick = () => {
+    // A plain GET download (admin cookie travels with it; no CSRF needed on GET).
+    const a = document.createElement("a");
+    a.href = "/api/tips/export";
+    a.download = "";  // let the server's Content-Disposition name it
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    toast("Preparing your Excel export…");
+  };
+  $("clear-tips-btn").onclick = async () => {
+    const ok = confirm(
+      "Delete ALL tips?\n\nThis permanently removes every tip and its votes, favourites, video " +
+      "links and angle text. Tag names are kept. This cannot be undone.\n\n" +
+      "Tip: run “Export all tips (Excel)” first if you want a backup."
+    );
+    if (!ok) return;
+    const r = await api("DELETE", "/api/tips");
+    if (r.error) { toast(r.error); return; }
+    toast(`Cleared ${r.deleted} tip${r.deleted !== 1 ? "s" : ""}.`);
+    selectedTip = null;
+    $("detail-pane").classList.add("hidden");
+    loadTips(activeTags.join(","));
+    loadSidebar();
+  };
+  $("clear-all-tags-btn").onclick = async () => {
+    const ok = confirm(
+      "Delete ALL tags?\n\nThis removes the entire tag list and unlinks every tip from its tags " +
+      "(the tips themselves stay). This cannot be undone."
+    );
+    if (!ok) return;
+    const r = await api("DELETE", "/api/tags");
+    if (r.error) { toast(r.error); return; }
+    toast(`Cleared ${r.deleted} tag${r.deleted !== 1 ? "s" : ""}.`);
+    selectedTip = null;
+    $("detail-pane").classList.add("hidden");
+    activeTags = [];
+    loadTips("");
+    loadSidebar();
+  };
+  $("import-xlsx-btn").onclick = () => $("import-xlsx-file").click();
+  $("import-xlsx-file").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    e.target.value = "";  // allow re-picking the same file later
+    toast("Importing tips from Excel…");
+    const fd = new FormData();
+    fd.append("file", file);
+    let res;
+    try {
+      const r = await fetch("/api/tips/import", {
+        method: "POST", body: fd, headers: { "X-CSRF-Token": csrfToken },
+      });
+      res = await r.json();
+    } catch (err) {
+      toast("Couldn't reach the server — is it running?");
+      return;
+    }
+    if (res.error) { toast(res.error); return; }
+    const bits = [];
+    if (res.created) bits.push(`${res.created} added`);
+    if (res.updated) bits.push(`${res.updated} updated`);
+    if (res.skipped) bits.push(`${res.skipped} skipped`);
+    toast("Import complete — " + (bits.join(", ") || "nothing to import") + ".");
+    loadTips(activeTags.join(","));
+    loadSidebar();
+  };
   dismissOnBackdrop("batch-overlay");
 
   $("batch-preview-btn").onclick = async () => {
@@ -2239,12 +2402,18 @@
     selectedFav = tip;
     $("analysis-tip").textContent = tip.content;
     $("analysis-video").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";  // further info
+    const overrides = tip.analysis || {};
+    // An angle is available if the AI is on OR an admin has written text for it. Angles with
+    // admin text get a marker so the reader knows it's a curated answer.
     document.querySelectorAll(".analysis-opt").forEach(b => {
+      const hasText = !!overrides[b.dataset.lens];
       b.classList.remove("active");
-      b.disabled = !llmEnabled;
+      b.classList.toggle("has-custom", hasText);
+      b.disabled = !llmEnabled && !hasText;
     });
-    $("analysis-result").innerHTML = llmEnabled
-      ? `<div class="analysis-hint">Pick an angle above to generate an analysis of this tip.</div>`
+    const anyCustom = Object.keys(overrides).length > 0;
+    $("analysis-result").innerHTML = (llmEnabled || anyCustom)
+      ? `<div class="analysis-hint">Pick an angle above to explore this tip.</div>`
       : `<div class="analysis-hint">AI analysis isn't configured.</div>`;
     $("analysis-pane").classList.remove("hidden");
     document.querySelectorAll("#fav-list .tip-card, #search-results .tip-card").forEach(c =>
@@ -2259,6 +2428,10 @@
     out.innerHTML = heading + `<div class="advise-thinking">${SPINNER}<span>Thinking it through…</span></div>`;
     const res = await api("POST", `/api/tips/${selectedFav.id}/analyze`, { lens });
     if (res.error) { out.innerHTML = heading + ERR(res.error); return; }
+    if (res.custom) {   // admin-written text — show it verbatim, no AI generation
+      out.innerHTML = heading + `<div class="analysis-custom">${escHtml(res.text || "").replace(/\n/g, "<br>")}</div>`;
+      return;
+    }
     const points = res.points || [];
     out.innerHTML = heading + (points.length
       ? `<ul class="analysis-list">${points.map(p => `<li>${escHtml(p)}</li>`).join("")}</ul>`
@@ -2375,6 +2548,14 @@
   // the "Suggest a tip" button is rendered in the header (next to Admin) by renderAuth.
   $("suggest-cancel").onclick = () => $("suggest-overlay").classList.add("hidden");
   dismissOnBackdrop("suggest-overlay");
+
+  // ── Help / how-to (account menu) — admin tools shown only to admins ──
+  function openHelp() {
+    $("help-admin").style.display = isAdmin ? "" : "none";
+    $("help-overlay").classList.remove("hidden");
+  }
+  $("help-close").onclick = () => $("help-overlay").classList.add("hidden");
+  dismissOnBackdrop("help-overlay");
 
   async function loadSuggestHistory() {
     const res = await api("GET", "/api/submissions/mine");
@@ -2617,7 +2798,11 @@
   // Tips & Tags Management dropdown
   $("mgmt-toggle").onclick = e => { e.stopPropagation(); $("mgmt-menu").classList.toggle("hidden"); };
   $("mgmt-menu").addEventListener("click", closeMgmtMenu);  // close after choosing an action
-  document.addEventListener("click", e => { if (!$("mgmt-wrap").contains(e.target)) closeMgmtMenu(); });
+  document.addEventListener("click", e => {
+    if (!$("mgmt-wrap").contains(e.target)) closeMgmtMenu();
+    const aw = $("account-wrap");
+    if (aw && !aw.contains(e.target)) closeAccountMenu();
+  });
 
   // Bootstrap: figure out the role first, then show the right view/controls.
   (async () => {

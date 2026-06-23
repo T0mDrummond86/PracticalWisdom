@@ -14,14 +14,15 @@
   --accent-tint-fg: #3d6a20;
   --accent-wash: #eef6e2;        /* subtle hover wash */
 
-  /* Three elevation layers above the background */
-  --bg: #f4f3ed;                 /* L0 — app canvas / scroll areas */
-  --surface: #ffffff;            /* L1 — chrome: sidebar, toolbar, panels */
-  --surface-2: #ffffff;          /* L2 — cards (lift via shadow in light) */
-  --elevated: #ffffff;           /* L3 — modals, popovers, dropdowns */
-  --input-bg: #f6f5ef;           /* inset fields */
-  --track-bg: #eae9e0;           /* segmented-control track */
-  --seg-active: #ffffff;         /* segmented-control active pill */
+  /* Three elevation layers above the background.
+     Warm paper rather than stark white — easy on the eyes. */
+  --bg: #e9e7dc;                 /* L0 — app canvas / scroll areas */
+  --surface: #f6f4ee;            /* L1 — chrome: sidebar, toolbar, panels */
+  --surface-2: #fbf9f3;          /* L2 — cards (lift via shadow in light) */
+  --elevated: #fbf9f3;           /* L3 — modals, popovers, dropdowns */
+  --input-bg: #e6e3d7;           /* inset fields */
+  --track-bg: #dddacd;           /* segmented-control track */
+  --seg-active: #fbf9f3;         /* segmented-control active pill */
   --btn-secondary: #eeede6;
   --btn-secondary-hover: #e3e2d8;
 
@@ -30,6 +31,9 @@
   --gold-hover: #f4d279;
   --on-gold: #2a2008;
   --cream: #f2eee3;
+  /* "Wisdom" in the title. Cream reads on dark/medium; on the light header it needs to
+     flip to a dark warm tone or it disappears (overridden in :root's light theme below). */
+  --brand-wisdom: #43352a;
 
   /* Dark-glass surface for secondary controls + the header */
   --glass: rgba(34,38,24,0.05);
@@ -84,6 +88,7 @@
   --accent-tint-bg: #2c3a1d;
   --accent-tint-fg: #b6d98a;
   --accent-wash: rgba(255,255,255,0.05);
+  --brand-wisdom: #f2eee3;       /* cream reads well on the night sky */
 
   --bg: #0a1022;                 /* deep night sky */
   --surface: #121a33;            /* chrome */
@@ -122,6 +127,51 @@
   --spinner-track: rgba(255,255,255,0.15);
 }
 
+/* Medium — a calm dim slate, sitting between the paper light and the night-sky
+   dark: light text on a mid-luminance blue-grey. */
+[data-theme="medium"] {
+  --accent-tint-bg: #3a4a28;
+  --accent-tint-fg: #c8e3a0;
+  --accent-wash: rgba(255,255,255,0.06);
+  --brand-wisdom: #f2eee3;       /* cream reads well on the slate */
+
+  --bg: #2e3440;                 /* slate canvas */
+  --surface: #373f4f;            /* chrome */
+  --surface-2: #424b5d;          /* cards lift off the canvas */
+  --elevated: #4d576b;           /* modals / popovers */
+  --input-bg: #272d38;           /* inset, deepest */
+  --track-bg: #353d4b;
+  --seg-active: #505c74;
+  --btn-secondary: #3c4555;
+  --btn-secondary-hover: #49536a;
+
+  --glass: rgba(255,255,255,0.07);
+  --glass-hover: rgba(255,255,255,0.13);
+  --glass-border: rgba(255,255,255,0.12);
+  --header-bg: rgba(46,52,64,0.85);
+  --header-border: rgba(255,255,255,0.08);
+  --status-red: #e06a5c;
+
+  --tier-primary-bd: #4a6630;  --tier-primary-fg: #abd97e;
+  --tier-secondary-bd: #5a5234; --tier-secondary-fg: #d8b96e; --tier-secondary-bg: #2e2a1c;
+
+  --danger: #ff9b8c; --danger-bg: #3a2826; --danger-bd: #7a4a48;
+  --info-bg: #25304a; --info-fg: #aabfff; --info-bd: #3e4e70;
+
+  --text: #eef1f7;
+  --text-secondary: #bcc3d2;
+  --text-tertiary: #868ea4;
+
+  --border: #454e62;
+  --border-subtle: #3a4254;
+  --border-strong: #566280;
+
+  --shadow-card: 0 1px 3px rgba(0,0,0,0.25);
+  --shadow-lift: 0 8px 24px rgba(0,0,0,0.35);
+  --shadow-pop:  0 14px 36px rgba(0,0,0,0.45);
+  --spinner-track: rgba(255,255,255,0.18);
+}
+
 /* ── Base ── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -138,6 +188,10 @@ body {
 
 /* Dark-glass header: an extension of the canvas, not a saturated bar above it */
 header {
+  /* Sit above the Network view's positioned overlays (z-index ≤ 50) so the
+     account dropdown, which overflows below the header, isn't painted over.
+     Stays below the mobile drawer (85–95) and modals (100). */
+  position: relative; z-index: 70;
   background: var(--header-bg);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--header-border);
@@ -305,6 +359,22 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .analysis-list { margin: 2px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
 .analysis-list li { font-size: 0.9rem; line-height: 1.55; color: var(--text); }
 .analysis-hint { font-size: 0.85rem; color: var(--text-tertiary); line-height: 1.5; }
+/* Admin-written angle: a small gold dot on the option, and prose (not bullets) in the result. */
+.analysis-opt.has-custom::after { content: "•"; color: var(--gold); margin-left: 6px; font-weight: 700; }
+.analysis-custom { font-size: 0.9rem; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
+
+/* ── "Choose an angle" override editor (detail pane, admin) ── */
+#analysis-editor { display: flex; flex-direction: column; gap: 9px; }
+#analysis-editor-note { font-size: 0.78rem; color: var(--text-tertiary); line-height: 1.5; margin: -2px 0 2px; }
+#analysis-editor-fields { display: flex; flex-direction: column; gap: 10px; }
+.analysis-field { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; font-weight: 600; color: var(--text-secondary); }
+.analysis-field textarea {
+  font-weight: 400; font-size: 0.88rem; min-height: 56px; resize: vertical;
+  background: var(--input-bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 10px; line-height: 1.5; font-family: inherit;
+}
+.analysis-field textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+#analysis-editor-status { font-size: 0.8rem; min-height: 1em; }
 
 /* ── Video embed (responsive 16:9) + admin attach field ── */
 .video-embed {
@@ -598,7 +668,7 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
   font-size: 1.32rem; font-weight: 600; letter-spacing: -0.005em; line-height: 1; white-space: nowrap;
 }
 .bw-practical { color: var(--gold); }
-.bw-wisdom { color: var(--cream); }
+.bw-wisdom { color: var(--brand-wisdom); }
 /* the dot of the "i" in Wisdom is the network's pulsing "next suggested" gold node */
 .wnode-i { position: relative; }
 .wisdom-node {
@@ -623,6 +693,71 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
   font-size: 0.7rem; font-weight: 700; letter-spacing: 0.04em;
 }
 
+/* ── Account dropdown (signed-in users) ── */
+.account { position: relative; }
+.account-trigger {
+  display: flex; align-items: center; gap: 8px; cursor: pointer;
+  background: var(--glass); border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill); padding: 4px 10px 4px 5px; color: var(--text-secondary);
+  font-size: 0.85rem; font-weight: 500; font-family: inherit;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.account-trigger:hover { background: var(--glass-hover); color: var(--text); }
+.account-trigger .auth-name { max-width: 140px; }
+.account-caret { font-size: 0.62rem; color: var(--text-tertiary); transition: transform var(--motion-fast) var(--ease); }
+.account-trigger[aria-expanded="true"] .account-caret { transform: rotate(180deg); }
+
+.account-menu {
+  position: absolute; top: calc(100% + 8px); right: 0; z-index: 60;
+  background: var(--elevated); border: 1px solid var(--border); border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop); padding: 6px; min-width: 220px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.account-menu.hidden { display: none; }
+.account-menu-header {
+  padding: 6px 10px 8px; font-size: 0.74rem; color: var(--text-tertiary);
+  line-height: 1.4; border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px;
+}
+.account-menu-header strong { color: var(--text-secondary); font-weight: 600; }
+.account-item {
+  display: block; width: 100%; text-align: left; background: none; border: none;
+  font-family: inherit; font-size: 0.85rem; color: var(--text); cursor: pointer;
+  padding: 8px 10px; border-radius: var(--r-sm);
+  transition: background var(--motion-fast) var(--ease);
+}
+.account-item:hover { background: var(--accent-wash); }
+.account-item-admin { display: flex; align-items: center; gap: 8px; }
+
+/* ── Help / how-to modal ── */
+.help-section { margin-top: 16px; }
+.help-section h3 { font-size: 0.92rem; color: var(--text); margin-bottom: 6px; }
+.help-list { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+.help-list li { font-size: 0.86rem; line-height: 1.55; color: var(--text-secondary); }
+.help-list strong { color: var(--text); font-weight: 600; }
+.help-list ul { margin-top: 6px; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; }
+.help-admin { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 20px; }
+.help-admin-note { font-size: 0.78rem; color: var(--accent); margin-bottom: 8px; }
+.account-item-admin .admin-badge { font-size: 0.62rem; padding: 2px 7px; }
+.account-menu-label {
+  padding: 6px 10px 4px; font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-tertiary); font-weight: 600;
+}
+.account-menu-sep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
+
+/* Appearance segmented control inside the account menu */
+.theme-seg {
+  display: flex; gap: 3px; background: var(--track-bg);
+  border-radius: var(--r-sm); padding: 3px; margin: 0 6px 4px;
+}
+.theme-opt {
+  flex: 1; background: none; border: none; cursor: pointer; font-family: inherit;
+  font-size: 0.78rem; font-weight: 500; color: var(--text-secondary);
+  padding: 6px 8px; border-radius: 5px;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.theme-opt:hover { color: var(--text); }
+.theme-opt.active { background: var(--seg-active); color: var(--text); font-weight: 600; box-shadow: var(--shadow-card); }
+
 /* ── Tips & Tags Management dropdown (admin only) ── */
 #mgmt-wrap { position: relative; }
 #mgmt-menu {
@@ -633,6 +768,9 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 }
 #mgmt-menu.hidden { display: none; }
 #mgmt-menu .btn { width: 100%; text-align: left; }
+.mgmt-sep { height: 1px; background: var(--border-subtle); margin: 4px 2px; }
+.mgmt-danger { color: var(--danger); }
+.mgmt-danger:hover { background: var(--danger-bg); color: var(--danger); }
 
 /* ── Vote + favorite controls, integrated into the card as a left rail ── */
 .vote-col {
