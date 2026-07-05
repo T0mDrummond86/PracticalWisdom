@@ -1336,6 +1336,11 @@ def reset_seen():
     return jsonify({"ok": True})
 
 
+# Run migrations at import, so the schema exists no matter how the app is launched
+# (gunicorn `app:app`, a WSGI server, or `python app.py`). Under gunicorn use --preload
+# so this runs once in the master before workers fork. Idempotent (IF NOT EXISTS +
+# schema_migrations), so re-running against an existing database is a safe no-op.
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, port=int(os.environ.get("PORT", "5001")))
