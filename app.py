@@ -31,6 +31,11 @@ app.config.update(
     # Don't cache static files in dev, so CSS/JS edits show up on a normal refresh.
     SEND_FILE_MAX_AGE_DEFAULT=0,
 )
+# Behind a reverse proxy (Railway, etc.) that terminates HTTPS: trust the forwarded
+# proto/host so url_for(_external=True) builds https OAuth redirect URIs that match the
+# one registered with Google. Harmless locally — the headers simply aren't present.
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 DB = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "tips.db"))
 
 # ── Google OAuth — only enabled when credentials are present, so the app still
