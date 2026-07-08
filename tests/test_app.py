@@ -751,6 +751,40 @@ def test_import_xlsx_accepts_tip_header_alias(client, app_module):
         assert conn.execute("SELECT COUNT(*) c FROM tips WHERE content='Be agile'").fetchone()["c"] == 1
 
 
+def test_embeddings_api_backend(monkeypatch):
+    # With EMBEDDINGS_API_KEY set, embed_texts hits the hosted API (not the local model)
+    # and returns vectors ordered by the response's index field.
+    import embeddings
+    monkeypatch.setenv("EMBEDDINGS_API_KEY", "test-key")
+    assert embeddings._use_api() is True and embeddings.is_enabled() is True
+
+    class FakeResp:
+        status_code = 200
+        text = ""
+        def json(self):
+            return {"data": [{"index": 1, "embedding": [0.0, 1.0]},
+                             {"index": 0, "embedding": [1.0, 0.0]}]}
+
+    monkeypatch.setattr(embeddings.requests, "post", lambda *a, **k: FakeResp())
+    assert embeddings.embed_texts(["a", "b"]) == [[1.0, 0.0], [0.0, 1.0]]
+
+
+def test_embeddings_api_error_raises(monkeypatch):
+    import embeddings, llm
+    import pytest
+    monkeypatch.setenv("EMBEDDINGS_API_KEY", "test-key")
+
+    class FakeResp:
+        status_code = 401
+        text = "unauthorized"
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(embeddings.requests, "post", lambda *a, **k: FakeResp())
+    with pytest.raises(llm.LLMError):
+        embeddings.embed_texts(["x"])
+
+
 def test_my_submissions_anonymous_is_empty(client):
     assert client.get("/api/submissions/mine").get_json() == {"submissions": []}
 

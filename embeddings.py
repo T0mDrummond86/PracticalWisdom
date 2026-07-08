@@ -5,9 +5,12 @@ text: two tips that say similar things get vectors that point in similar directi
 every tip has one, we can do things tag-matching can't — semantic search ("find tips about
 staying calm"), a smarter "next suggested tip", and "these two tips are related" links.
 
-Embeddings run on a small model **locally** via `fastembed` (no API key, no quota, fully
-private). This is deliberately separate from llm.py (text generation, which uses Groq): the
-two capabilities have different providers, so each degrades on its own.
+Embeddings come from one of two backends, chosen at runtime:
+  * a **hosted embeddings API** (OpenAI-compatible) when EMBEDDINGS_API_KEY is set — this uses
+    almost no memory, so it works on small hosts where a local model would run out of RAM; or
+  * a small **local model** via `fastembed` (no API key, fully private) as the fallback.
+Only embed_texts() differs between them; the rest of the app is identical. This is separate
+from llm.py (text generation via Groq) — each capability degrades on its own.
 
 Design notes:
   * Vectors are stored in the `tip_embeddings` table as packed float32 BLOBs, L2-normalised so
@@ -15,7 +18,7 @@ Design notes:
   * With a few hundred tips, a brute-force scan in pure Python is microseconds — no vector
     database needed. If the collection grows into the tens of thousands, this is the one spot
     to swap in an approximate-nearest-neighbour index.
-  * If fastembed isn't installed, is_enabled() is False and the callers simply don't offer the
+  * If neither backend is available, is_enabled() is False and callers don't offer the
     semantic features.
 """
 import array
@@ -23,14 +26,34 @@ import hashlib
 import math
 import os
 
+import requests
+
 import llm  # only for the shared LLMError type (keeps app.py's error handling uniform)
 
-# A compact, good-quality sentence-embedding model (384 dims). Downloaded once (~130MB) and
-# cached; the loaded model stays resident in the server process.
-EMBED_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5")
-EMBED_DIM = 384
+# ── Backend selection ────────────────────────────────────────────────────────
+# Hosted API (OpenAI-compatible) when EMBEDDINGS_API_KEY is set, else local fastembed.
+# The API speaks {model, input:[...]} -> {data:[{embedding:[...]}]}; point it at your
+# provider with EMBEDDINGS_API_URL / EMBEDDINGS_API_MODEL (see README / DEPLOY.md).
+EMBEDDINGS_API_URL = os.environ.get("EMBEDDINGS_API_URL", "https://api.openai.com/v1/embeddings")
+EMBEDDINGS_API_MODEL = os.environ.get("EMBEDDINGS_API_MODEL", "text-embedding-3-small")
+LOCAL_MODEL = os.environ.get("EMBED_MODEL", "BAAI/bge-small-en-v1.5")  # fastembed fallback (~130MB)
+_API_CHUNK = 64  # texts per API request
 
-_model = None  # lazily loaded TextEmbedding instance
+
+def _api_key():
+    return os.environ.get("EMBEDDINGS_API_KEY")  # read lazily, so .env load order doesn't matter
+
+
+def _use_api():
+    return bool(_api_key())
+
+
+# Recorded alongside each stored vector. Switching backends changes this, which marks every
+# existing embedding stale so a rebuild recomputes them all consistently (same dimension).
+EMBED_MODEL = EMBEDDINGS_API_MODEL if os.environ.get("EMBEDDINGS_API_KEY") else LOCAL_MODEL
+EMBED_DIM = int(os.environ.get("EMBED_DIM", "0")) or (1536 if os.environ.get("EMBEDDINGS_API_KEY") else 384)
+
+_model = None  # lazily loaded fastembed model (only when NOT using the API)
 
 
 def _get_model():
@@ -40,12 +63,14 @@ def _get_model():
             from fastembed import TextEmbedding
         except ImportError as e:
             raise llm.LLMError("fastembed not installed (%s) — run: pip install fastembed" % e)
-        _model = TextEmbedding(model_name=EMBED_MODEL)
+        _model = TextEmbedding(model_name=LOCAL_MODEL)
     return _model
 
 
 def is_enabled():
-    """True when embeddings can be produced (i.e. fastembed is importable)."""
+    """True when embeddings can be produced — via the hosted API (key set) or local fastembed."""
+    if _use_api():
+        return True
     try:
         import fastembed  # noqa: F401
         return True
@@ -53,14 +78,42 @@ def is_enabled():
         return False
 
 
-def embed_texts(texts):
-    """Embed a list of texts locally, returning a list of float vectors aligned with the input.
+def _embed_via_api(texts):
+    """Embed via an OpenAI-compatible /v1/embeddings endpoint, in chunks. Low memory."""
+    key = _api_key()
+    out = []
+    for i in range(0, len(texts), _API_CHUNK):
+        chunk = texts[i:i + _API_CHUNK]
+        try:
+            resp = requests.post(
+                EMBEDDINGS_API_URL,
+                headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"},
+                json={"model": EMBEDDINGS_API_MODEL, "input": chunk},
+                timeout=60,
+            )
+        except requests.RequestException as e:
+            raise llm.LLMError("embeddings request failed: %s" % e)
+        if resp.status_code != 200:
+            raise llm.LLMError("embeddings API %s: %s" % (resp.status_code, resp.text[:300]))
+        try:
+            data = sorted(resp.json()["data"], key=lambda d: d.get("index", 0))
+            out.extend(d["embedding"] for d in data)
+        except (KeyError, TypeError, ValueError) as e:
+            raise llm.LLMError("bad embeddings response: %s" % e)
+    return out
 
-    Raises llm.LLMError on failure (so callers can handle it the same way as a remote call).
+
+def embed_texts(texts):
+    """Embed a list of texts, returning a list of float vectors aligned with the input.
+
+    Uses the hosted API when configured (tiny memory), else the local model.
+    Raises llm.LLMError on failure (so callers handle it the same as a remote call).
     """
     texts = list(texts)
     if not texts:
         return []
+    if _use_api():
+        return _embed_via_api(texts)
     try:
         model = _get_model()
         return [list(map(float, v)) for v in model.embed(texts)]
@@ -195,7 +248,7 @@ def status(conn):
     }
 
 
-# ── similarity queries (no API call — embeddings are local) ──────────────────
+# ── similarity queries (read stored vectors; only `search` embeds its query) ──
 def _load_vectors(conn, exclude_ids=()):
     """All stored (tip_id, normalised vector) pairs, minus any excluded ids."""
     exclude = set(exclude_ids)

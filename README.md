@@ -49,10 +49,20 @@ GROQ_API_KEY=
 # GROQ_MODEL=llama-3.3-70b-versatile        # optional: text-generation model override
 ```
 
-> **Embeddings** (semantic search, related-links, advice retrieval) run on a **small local
-> model** via `fastembed` — no API key, no quota, fully private. It downloads once (~130MB)
-> on first use and is cached. Override with `EMBED_MODEL` if you like (default
-> `BAAI/bge-small-en-v1.5`, 384 dims).
+> **Embeddings** (semantic search, related-links, advice retrieval) have two backends:
+> - **Local model** (default): `fastembed` — no API key, fully private, downloads once (~130MB)
+>   and loads into RAM. Great locally; needs ~0.5–1 GB of memory, so it can OOM on tiny hosts.
+> - **Hosted API** (set `EMBEDDINGS_API_KEY`): any OpenAI-compatible `/v1/embeddings` provider.
+>   Almost no memory — use this on small cloud instances. Configure with:
+>   ```ini
+>   EMBEDDINGS_API_KEY=...            # presence switches to the API backend
+>   EMBEDDINGS_API_URL=https://api.openai.com/v1/embeddings   # or your provider's endpoint
+>   EMBEDDINGS_API_MODEL=text-embedding-3-small               # your provider's embedding model
+>   ```
+>   Free options include Google Gemini (`https://generativelanguage.googleapis.com/v1beta/openai/embeddings`,
+>   model `text-embedding-004`) and Jina (`https://api.jina.ai/v1/embeddings`, model `jina-embeddings-v3`).
+>   After switching backends, run **Rebuild semantic index** once (Tips & Tags Management) so all
+>   tips are re-embedded with the new model.
 
 ## Project layout
 
