@@ -790,6 +790,22 @@
     a.remove();
     toast("Preparing your Excel export…");
   };
+
+  // Build the semantic index (embeddings) for all tips — powers Meaning links/search.
+  // Surfaces the real error if the local model can't load (e.g. too little memory).
+  $("rebuild-embeddings-btn").onclick = async () => {
+    toast("Building the semantic index… first run downloads the model, so give it a minute.");
+    const r = await api("POST", "/api/embeddings/rebuild");
+    if (r.error) { toast(r.error); return; }
+    const s = await api("GET", "/api/embeddings/status");
+    // Drop cached (empty) related-link results so re-selecting a node fetches fresh.
+    Object.keys(relatedCache).forEach(k => delete relatedCache[k]);
+    if (s && s.total != null) {
+      toast(`Semantic index ready — ${s.embedded}/${s.total} tips embedded. Reopen a node in Meaning mode to see links.`);
+    } else {
+      toast(`Semantic index updated (${r.embedded} embedded).`);
+    }
+  };
   $("clear-tips-btn").onclick = async () => {
     const ok = confirm(
       "Delete ALL tips?\n\nThis permanently removes every tip and its votes, favourites, video " +
