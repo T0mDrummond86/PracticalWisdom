@@ -852,12 +852,17 @@ def import_tips():
     updated in place (so re-importing a backup is idempotent), a new one is created otherwise.
     Returns {created, updated, skipped}."""
     from openpyxl import load_workbook
+    from io import BytesIO
 
     upload = request.files.get("file")
     if not upload:
         return jsonify({"error": "No file uploaded."}), 400
+    # Read the whole upload into memory first. Behind gunicorn the request stream isn't
+    # reliably seekable, which openpyxl's read-only reader needs — passing it directly can
+    # silently yield zero rows on some servers. A BytesIO is always seekable. Files are small
+    # (admin backups), so a plain (non-read-only) load is fine and the most robust.
     try:
-        wb = load_workbook(upload, read_only=True, data_only=True)
+        wb = load_workbook(BytesIO(upload.read()), data_only=True)
     except Exception:
         return jsonify({"error": "Couldn't read that file — upload an .xlsx exported from here."}), 400
     ws = wb.active
