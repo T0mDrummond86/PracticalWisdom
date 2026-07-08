@@ -910,12 +910,15 @@ def import_tips():
                     conn.execute("DELETE FROM tip_analysis WHERE tip_id = ? AND lens = ?", (tip_id, lens))
             for_embed.append((tip_id, content, anecdote))
 
+        # Commit the imported tips FIRST, so they persist even if the (heavy, best-effort)
+        # embedding step below is slow, errors, or gets the worker killed for memory.
+        conn.commit()
         if embeddings.is_enabled() and for_embed:
             try:
                 embeddings.store_many(conn, for_embed)
+                conn.commit()
             except Exception as e:  # best-effort: never let embedding break a restore
                 app.logger.warning("import embedding skipped (%d tips): %s", len(for_embed), e)
-        conn.commit()
 
     return jsonify({"created": created, "updated": updated, "skipped": skipped})
 
