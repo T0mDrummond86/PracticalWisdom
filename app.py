@@ -859,7 +859,7 @@ def import_tips():
         for row in row_iter:
             if row is None:
                 continue
-            content = str(cell(row, "Content") or "").strip()
+            content = str(cell(row, "Content", "Tip") or "").strip()
             primary = _split_tags(cell(row, "Primary tags"))
             if not content or not primary:
                 skipped += 1  # need content and at least one primary tag

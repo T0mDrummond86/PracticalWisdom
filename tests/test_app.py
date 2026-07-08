@@ -701,6 +701,24 @@ def test_import_xlsx_creates_new_tips(client, app_module):
         assert conn.execute("SELECT tier FROM tags WHERE name='habit'").fetchone()["tier"] == "secondary"
 
 
+def test_import_xlsx_accepts_tip_header_alias(client, app_module):
+    # A hand-built sheet titling the content column "Tip" (with mixed-case tag headers)
+    # must import — not skip every row for a missing "Content" column.
+    from io import BytesIO
+    from openpyxl import Workbook
+    wb = Workbook(); ws = wb.active
+    ws.append(["ID", "Tip", "Anecdote", "Primary Tags", "Secondary Tags"])
+    ws.append([1, "Be agile", "stay flexible", "emotional", "decision_making"])
+    buf = BytesIO(); wb.save(buf); buf.seek(0)
+    token = login_admin(client)
+    body = client.post("/api/tips/import", data={"file": (buf, "master.xlsx")},
+                       headers={"X-CSRF-Token": token},
+                       content_type="multipart/form-data").get_json()
+    assert body["created"] == 1 and body["skipped"] == 0
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM tips WHERE content='Be agile'").fetchone()["c"] == 1
+
+
 def test_my_submissions_anonymous_is_empty(client):
     assert client.get("/api/submissions/mine").get_json() == {"submissions": []}
 
