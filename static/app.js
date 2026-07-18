@@ -251,6 +251,17 @@
     return false;
   }
 
+  // The journal is the app's deepest feature and the save moment is its doorway —
+  // tell people it exists exactly when it becomes relevant (but not on every save).
+  function maybeJournalHint() {
+    let n = 0;
+    try { n = parseInt(localStorage.getItem("favHintCount") || "0", 10); } catch (e) {}
+    if (n < 3) {
+      toast("Saved to Favorites — open it there to explore angles or start a journal.");
+      try { localStorage.setItem("favHintCount", String(n + 1)); } catch (e) {}
+    }
+  }
+
   async function doVote(tip, dir) {
     if (!requireLogin()) return false;
     const value = tip.my_vote === dir ? 0 : dir;  // clicking your current vote again clears it
@@ -258,16 +269,7 @@
     const u = await api("POST", `/api/tips/${tip.id}/vote`, { value });
     if (!u || u.error) { toast((u && u.error) || "Couldn't save that — try again."); return false; }
     Object.assign(tip, u);
-    // The journal is the app's deepest feature and the save moment is its doorway —
-    // tell people it exists exactly when it becomes relevant (but not on every save).
-    if (u.favorited && !wasFavorited) {
-      let n = 0;
-      try { n = parseInt(localStorage.getItem("favHintCount") || "0", 10); } catch (e) {}
-      if (n < 3) {
-        toast("Saved to Favorites — open it there to explore angles or start a journal.");
-        try { localStorage.setItem("favHintCount", String(n + 1)); } catch (e) {}
-      }
-    }
+    if (u.favorited && !wasFavorited) maybeJournalHint();
     return true;
   }
 
@@ -2245,9 +2247,9 @@
     $("cv-anecdote").textContent = tip.anecdote || "";
     renderCardVideo("cv-video", tip);   // "▶ Watch the video" when one is attached
     $("cv-tags").innerHTML = tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("");
-    $("cv-actions").innerHTML = tipControlsHTML(tip);
-    // a vote changes your favourites profile → re-pick the next tip
-    bindTipControls($("cv-actions"), tip, () => computeCardNext());
+    // No favourite button here: in Cards view, saving IS the swipe (right = save),
+    // per the hint under the card — a heart would duplicate the gesture.
+    $("cv-actions").innerHTML = "";
   }
 
   function renderCardEmpty() {
@@ -2350,6 +2352,7 @@
     const u = await api("POST", `/api/tips/${tip.id}/vote`, { value: 1 });
     if (!u || u.error) { toast((u && u.error) || "Couldn't save."); return false; }
     Object.assign(tip, u);
+    maybeJournalHint();   // swiping is the only save path in Cards view — hint here too
     return true;
   }
 
