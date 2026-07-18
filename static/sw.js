@@ -10,7 +10,7 @@
  *
  * Bump CACHE when you ship new shell assets — the old cache is purged on activate.
  */
-const CACHE = "pw-cache-v5";
+const CACHE = "pw-cache-v6";
 
 const SHELL = [
   "/",
