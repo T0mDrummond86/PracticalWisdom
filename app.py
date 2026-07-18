@@ -1157,6 +1157,113 @@ def vote_tip(tip_id):
         return jsonify(tip_with_tags(conn, tip_id))
 
 
+# ── Tip journal: a user's private log of applying a tip, + saved AI coaching ──
+def _journal_entry_json(row):
+    return {"id": row["id"], "kind": row["kind"], "content": row["content"],
+            "created_at": row["created_at"]}
+
+
+@app.get("/api/tips/<int:tip_id>/journal")
+def get_journal(tip_id):
+    """The signed-in user's journal for one tip (their entries + saved AI feedback), oldest first."""
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in to keep a journal."}), 401
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, kind, content, created_at FROM journal_entries "
+            "WHERE user_id = ? AND tip_id = ? ORDER BY created_at, id",
+            (uid, tip_id),
+        ).fetchall()
+    return jsonify({"entries": [_journal_entry_json(r) for r in rows]})
+
+
+@app.post("/api/tips/<int:tip_id>/journal")
+def add_journal_entry(tip_id):
+    """Log an experience applying this tip. Signed-in users only; private to that user."""
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in to keep a journal."}), 401
+    content = ((request.get_json(force=True) or {}).get("content") or "").strip()
+    if not content:
+        return jsonify({"error": "Write something first."}), 400
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM tips WHERE id = ?", (tip_id,)).fetchone():
+            return jsonify({"error": "tip not found"}), 404
+        cur = conn.execute(
+            "INSERT INTO journal_entries (user_id, tip_id, kind, content) VALUES (?, ?, 'entry', ?)",
+            (uid, tip_id, content),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, kind, content, created_at FROM journal_entries WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone()
+    return jsonify(_journal_entry_json(row)), 201
+
+
+@app.delete("/api/journal/<int:entry_id>")
+def delete_journal_entry(entry_id):
+    """Delete one of the signed-in user's own journal entries (user note or saved AI feedback)."""
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in to keep a journal."}), 401
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM journal_entries WHERE id = ?", (entry_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "entry not found"}), 404
+        if row["user_id"] != uid:
+            return jsonify({"error": "Not your entry."}), 403
+        conn.execute("DELETE FROM journal_entries WHERE id = ?", (entry_id,))
+        conn.commit()
+    return jsonify({"deleted": entry_id})
+
+
+@app.post("/api/tips/<int:tip_id>/journal/feedback")
+def journal_feedback(tip_id):
+    """AI coaching on the user's whole journal for this tip; the feedback is SAVED as an
+    'ai' entry so it can be re-read later. Needs a signed-in user, the LLM, and ≥1 entry."""
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in to keep a journal."}), 401
+    if not llm.is_enabled():
+        return jsonify({"error": "AI feedback isn't configured (set GROQ_API_KEY)."}), 503
+    with get_db() as conn:
+        tip = conn.execute(
+            "SELECT content, anecdote FROM tips WHERE id = ?", (tip_id,)
+        ).fetchone()
+        if not tip:
+            return jsonify({"error": "tip not found"}), 404
+        entries = conn.execute(
+            "SELECT content, created_at FROM journal_entries "
+            "WHERE user_id = ? AND tip_id = ? AND kind = 'entry' ORDER BY created_at, id",
+            (uid, tip_id),
+        ).fetchall()
+    if not entries:
+        return jsonify({"error": "Write at least one journal entry first."}), 400
+    tip_text = tip["content"] + (("\n" + tip["anecdote"]) if tip["anecdote"] else "")
+    try:
+        result = llm.journal_feedback(
+            tip_text,
+            [{"date": (e["created_at"] or "")[:10], "content": e["content"]} for e in entries],
+        )
+    except llm.LLMError as e:
+        return jsonify({"error": "Feedback failed: %s" % e}), 502
+    with get_db() as conn:
+        cur = conn.execute(
+            "INSERT INTO journal_entries (user_id, tip_id, kind, content) VALUES (?, ?, 'ai', ?)",
+            (uid, tip_id, result["feedback"]),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT id, kind, content, created_at FROM journal_entries WHERE id = ?",
+            (cur.lastrowid,),
+        ).fetchone()
+    return jsonify(_journal_entry_json(row)), 201
+
+
 @app.post("/api/favorites/insights")
 def favorites_insights():
     """Reflect on the signed-in user's favourite tips: themes, what resonates, next steps.

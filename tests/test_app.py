@@ -785,6 +785,105 @@ def test_embeddings_api_error_raises(monkeypatch):
         embeddings.embed_texts(["x"])
 
 
+# ── Tip journal ────────────────────────────────────────────────────────────
+def test_journal_requires_sign_in(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = get_csrf(client)
+    assert client.get(f"/api/tips/{tid}/journal").status_code == 401
+    assert client.post(f"/api/tips/{tid}/journal", json={"content": "x"},
+                       headers={"X-CSRF-Token": token}).status_code == 401
+    assert client.delete("/api/journal/1", headers={"X-CSRF-Token": token}).status_code == 401
+    assert client.post(f"/api/tips/{tid}/journal/feedback",
+                       headers={"X-CSRF-Token": token}).status_code == 401
+
+
+def test_journal_add_list_ordering(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    assert client.post(f"/api/tips/{tid}/journal", json={"content": "  "},
+                       headers={"X-CSRF-Token": token}).status_code == 400
+    e1 = client.post(f"/api/tips/{tid}/journal", json={"content": "Tried it at work"},
+                     headers={"X-CSRF-Token": token})
+    assert e1.status_code == 201 and e1.get_json()["kind"] == "entry"
+    client.post(f"/api/tips/{tid}/journal", json={"content": "Went better today"},
+                headers={"X-CSRF-Token": token})
+    entries = client.get(f"/api/tips/{tid}/journal").get_json()["entries"]
+    assert [e["content"] for e in entries] == ["Tried it at work", "Went better today"]
+
+
+def test_journal_is_private_per_user(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    ua = make_user(app_module, sub="a", email="a@e.com", name="A")
+    ub = make_user(app_module, sub="b", email="b@e.com", name="B")
+    token = login_user(client, ua)
+    eid = client.post(f"/api/tips/{tid}/journal", json={"content": "mine"},
+                      headers={"X-CSRF-Token": token}).get_json()["id"]
+    token_b = login_user(client, ub)   # switch session to user B
+    assert client.get(f"/api/tips/{tid}/journal").get_json()["entries"] == []
+    r = client.delete(f"/api/journal/{eid}", headers={"X-CSRF-Token": token_b})
+    assert r.status_code == 403
+    token = login_user(client, ua)     # owner can delete
+    assert client.delete(f"/api/journal/{eid}",
+                         headers={"X-CSRF-Token": token}).status_code == 200
+    assert client.get(f"/api/tips/{tid}/journal").get_json()["entries"] == []
+
+
+def test_journal_feedback_gating(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    # LLM off (default in tests) → 503
+    assert client.post(f"/api/tips/{tid}/journal/feedback",
+                       headers={"X-CSRF-Token": token}).status_code == 503
+
+
+def test_journal_feedback_needs_an_entry(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.llm, "is_enabled", lambda: True)
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    r = client.post(f"/api/tips/{tid}/journal/feedback", headers={"X-CSRF-Token": token})
+    assert r.status_code == 400
+
+
+def test_journal_feedback_saved_as_ai_entry(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.llm, "is_enabled", lambda: True)
+    seen = {}
+    def fake_feedback(tip_text, entries):
+        seen["tip_text"] = tip_text
+        seen["entries"] = entries
+        return {"feedback": "Try smaller steps."}
+    monkeypatch.setattr(app_module.llm, "journal_feedback", fake_feedback)
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    client.post(f"/api/tips/{tid}/journal", json={"content": "I rushed again"},
+                headers={"X-CSRF-Token": token})
+    r = client.post(f"/api/tips/{tid}/journal/feedback", headers={"X-CSRF-Token": token})
+    assert r.status_code == 201
+    body = r.get_json()
+    assert body["kind"] == "ai" and body["content"] == "Try smaller steps."
+    # the model was shown the tip and the user's entries
+    assert "Be patient" in seen["tip_text"]
+    assert [e["content"] for e in seen["entries"]] == ["I rushed again"]
+    # and the feedback is persisted in the journal
+    kinds = [e["kind"] for e in client.get(f"/api/tips/{tid}/journal").get_json()["entries"]]
+    assert kinds == ["entry", "ai"]
+
+
+def test_unfavoriting_keeps_journal(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    client.post(f"/api/tips/{tid}/vote", json={"value": 1}, headers={"X-CSRF-Token": token})
+    client.post(f"/api/tips/{tid}/journal", json={"content": "kept?"},
+                headers={"X-CSRF-Token": token})
+    client.post(f"/api/tips/{tid}/vote", json={"value": 0}, headers={"X-CSRF-Token": token})
+    entries = client.get(f"/api/tips/{tid}/journal").get_json()["entries"]
+    assert [e["content"] for e in entries] == ["kept?"]
+
+
 def test_my_submissions_anonymous_is_empty(client):
     assert client.get("/api/submissions/mine").get_json() == {"submissions": []}
 

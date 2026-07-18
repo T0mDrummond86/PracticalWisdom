@@ -2434,6 +2434,7 @@
     $("analysis-pane").classList.remove("hidden");
     document.querySelectorAll("#fav-list .tip-card, #search-results .tip-card").forEach(c =>
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id));
+    loadJournal(tip);   // the signed-in user's private journal for this tip
   }
 
   async function runFavAnalysis(lens, btn) {
@@ -2462,6 +2463,83 @@
 
   $("analysis-close").onclick = closeFavAnalysis;
   document.querySelectorAll(".analysis-opt").forEach(b => { b.onclick = () => runFavAnalysis(b.dataset.lens, b); });
+
+  // ── Tip journal (in the Explore pane): log experiences, get saved AI coaching ──
+  let journalEntries = [];   // the open tip's entries for the signed-in user
+
+  function journalEntryHtml(e) {
+    const date = (e.created_at || "").slice(0, 10);
+    const isAI = e.kind === "ai";
+    return `<div class="journal-entry${isAI ? " ai" : ""}" data-id="${e.id}">
+      <div class="journal-entry-head">
+        <span class="journal-entry-meta">${isAI ? "✨ AI coach" : "You"} · ${escHtml(date)}</span>
+        <button class="journal-del" title="Delete this entry" aria-label="Delete entry">×</button>
+      </div>
+      <div class="journal-entry-text">${escHtml(e.content).replace(/\n/g, "<br>")}</div>
+    </div>`;
+  }
+
+  function renderJournal() {
+    const list = $("journal-list");
+    list.innerHTML = journalEntries.length
+      ? journalEntries.map(journalEntryHtml).join("")
+      : `<div class="journal-empty">No entries yet — log your first attempt below.</div>`;
+    list.querySelectorAll(".journal-del").forEach(btn => {
+      btn.onclick = async () => {
+        if (!confirm("Delete this journal entry? This can't be undone.")) return;
+        const id = Number(btn.closest(".journal-entry").dataset.id);
+        const r = await api("DELETE", `/api/journal/${id}`);
+        if (r.error) { toast(r.error); return; }
+        journalEntries = journalEntries.filter(e => e.id !== id);
+        renderJournal();
+      };
+    });
+    list.scrollTop = list.scrollHeight;   // newest entries sit at the bottom
+    // AI feedback needs the LLM and at least one user-written entry to read.
+    const hasEntry = journalEntries.some(e => e.kind !== "ai");
+    const fb = $("journal-feedback-btn");
+    fb.disabled = !llmEnabled || !hasEntry;
+    fb.title = !llmEnabled ? "AI feedback isn't configured"
+      : (hasEntry ? "AI coaching based on your whole journal for this tip"
+                  : "Write at least one entry first");
+  }
+
+  async function loadJournal(tip) {
+    const section = $("journal-section");
+    if (!currentUser) { section.style.display = "none"; return; }
+    section.style.display = "";
+    $("journal-input").value = "";
+    $("journal-status").textContent = "";
+    $("journal-list").innerHTML = SPINNER;
+    const res = await api("GET", `/api/tips/${tip.id}/journal`);
+    if (selectedFav?.id !== tip.id) return;   // user moved on while we were loading
+    if (res.error) { $("journal-list").innerHTML = ERR(res.error); return; }
+    journalEntries = res.entries || [];
+    renderJournal();
+  }
+
+  $("journal-add-btn").onclick = async () => {
+    if (!selectedFav) return;
+    const content = $("journal-input").value.trim();
+    if (!content) { $("journal-input").focus(); return; }
+    const r = await api("POST", `/api/tips/${selectedFav.id}/journal`, { content });
+    if (r.error) { toast(r.error); return; }
+    $("journal-input").value = "";
+    journalEntries.push(r);
+    renderJournal();
+  };
+
+  $("journal-feedback-btn").onclick = async () => {
+    if (!selectedFav) return;
+    const status = $("journal-status");
+    $("journal-feedback-btn").disabled = true;
+    status.innerHTML = `<div class="advise-thinking">${SPINNER}<span>Reading your journal…</span></div>`;
+    const r = await api("POST", `/api/tips/${selectedFav.id}/journal/feedback`);
+    status.innerHTML = "";
+    if (r.error) { toast(r.error); renderJournal(); return; }
+    journalEntries.push(r);
+    renderJournal();
+  };
 
   // ════════════════ Ask-for-advice view (RAG) ═══════════════════
   // The user describes a situation; the server retrieves the most relevant tips by meaning
