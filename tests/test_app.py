@@ -50,6 +50,38 @@ def test_index_serves_static(client):
     assert b"/static/styles.css" in r.data
 
 
+def test_index_links_pwa(client):
+    # The page advertises itself as an installable PWA.
+    r = client.get("/")
+    assert b'rel="manifest"' in r.data
+    assert b'name="theme-color"' in r.data
+    assert b'name="apple-mobile-web-app-capable"' in r.data
+    assert b"apple-touch-icon" in r.data
+
+
+def test_manifest_is_valid(client):
+    r = client.get("/static/manifest.json")
+    assert r.status_code == 200
+    data = r.get_json(force=True)
+    assert data["name"] == "Practical Wisdom"
+    assert data["display"] == "standalone"
+    assert data["start_url"] == "/"
+    # at least one 192 and one 512 icon, plus a maskable one
+    sizes = {i["sizes"] for i in data["icons"]}
+    assert "192x192" in sizes and "512x512" in sizes
+    assert any(i.get("purpose") == "maskable" for i in data["icons"])
+
+
+def test_service_worker_served_from_root(client):
+    # The SW must be reachable at the site root with a JS content-type and root scope,
+    # otherwise it can't control the whole app.
+    r = client.get("/sw.js")
+    assert r.status_code == 200
+    assert "javascript" in r.headers["Content-Type"]
+    assert r.headers.get("Service-Worker-Allowed") == "/"
+    assert b"addEventListener" in r.data
+
+
 def test_parse_batch_unit(app_module):
     parsed = app_module.parse_batch("Drink water #health #morning Write goals #focus")
     assert parsed == [("Drink water", ["health", "morning"]), ("Write goals", ["focus"])]

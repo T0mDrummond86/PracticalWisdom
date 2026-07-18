@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, session, redirect, url_for, make_response, send_file
+from flask import Flask, request, jsonify, render_template, session, redirect, url_for, make_response, send_from_directory, send_file
 from authlib.integrations.flask_client import OAuth
 from werkzeug.security import generate_password_hash, check_password_hash
 from functools import wraps
@@ -31,6 +31,11 @@ app.config.update(
     # Don't cache static files in dev, so CSS/JS edits show up on a normal refresh.
     SEND_FILE_MAX_AGE_DEFAULT=0,
 )
+# Behind a reverse proxy (Railway, etc.) that terminates HTTPS: trust the forwarded
+# proto/host so url_for(_external=True) builds https OAuth redirect URIs that match the
+# one registered with Google. Harmless locally — the headers simply aren't present.
+from werkzeug.middleware.proxy_fix import ProxyFix
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 DB = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "tips.db"))
 
 # ── Google OAuth — only enabled when credentials are present, so the app still
@@ -281,11 +286,28 @@ def embed_quietly(conn, tip_id, content, anecdote=""):
         app.logger.warning("embedding skipped for tip %s: %s", tip_id, e)
 
 
+def _pwa_enabled():
+    # Register the service worker only in production (so a stale SW never serves cached
+    # assets during local dev). ENABLE_SW=1 forces it on for testing the PWA locally.
+    return (not app.debug) or os.environ.get("ENABLE_SW") == "1"
+
+
 @app.get("/")
 def index():
     # Never cache the page itself, so edits show up on a normal refresh.
-    resp = make_response(render_template("index.html"))
+    resp = make_response(render_template("index.html", pwa_enabled=_pwa_enabled()))
     resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the site root so its scope can control the whole app — a /static/ URL
+    # could only control /static/. The file itself lives in static/.
+    resp = make_response(send_from_directory(app.static_folder, "sw.js"))
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"  # always revalidate the SW itself
     return resp
 
 
@@ -1449,6 +1471,11 @@ def reset_seen():
     return jsonify({"ok": True})
 
 
+# Run migrations at import, so the schema exists no matter how the app is launched
+# (gunicorn `app:app`, a WSGI server, or `python app.py`). Under gunicorn use --preload
+# so this runs once in the master before workers fork. Idempotent (IF NOT EXISTS +
+# schema_migrations), so re-running against an existing database is a safe no-op.
+init_db()
+
 if __name__ == "__main__":
-    init_db()
     app.run(debug=True, port=int(os.environ.get("PORT", "5001")))
