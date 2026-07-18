@@ -359,6 +359,21 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .analysis-list { margin: 2px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
 .analysis-list li { font-size: 0.9rem; line-height: 1.55; color: var(--text); }
 .analysis-hint { font-size: 0.85rem; color: var(--text-tertiary); line-height: 1.5; }
+/* ── "Watch the video" toggle inside tip cards (Cards + Network views) ── */
+#cv-video:not(:empty) { margin: 10px 0 4px; }
+#net-card-video:not(:empty) { margin: 9px 0 2px; }
+.video-toggle {
+  background: var(--glass); color: var(--text-secondary); border: 1px solid var(--glass-border);
+  border-radius: var(--r-pill); padding: 6px 14px; font-size: 0.8rem; font-weight: 500;
+  font-family: inherit; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.video-toggle:hover { background: var(--glass-hover); color: var(--text); }
+/* The network card is a fixed dark glass panel, so its toggle is light-on-dark. */
+#net-card .video-toggle { background: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.18); color: #dfe7ef; }
+#net-card .video-toggle:hover { background: rgba(255,255,255,0.18); color: #fff; }
+.video-slot:not(:empty) { margin-top: 9px; }
+
 /* ── Tip journal (Explore pane): private log + saved AI coaching ── */
 #journal-section { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
 #journal-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }

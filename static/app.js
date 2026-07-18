@@ -434,6 +434,35 @@
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
       allowfullscreen></iframe></div>`;
   }
+
+  // Add the host's autoplay flag to an embed src — used when the player appears in
+  // response to a click, so it starts playing without a second tap on the iframe.
+  function withAutoplay(src) {
+    if (src.includes("youtube-nocookie.com")) return src + "&autoplay=1";     // src always has ?rel=0
+    if (src.includes("player.vimeo.com")) {
+      const [base, hash] = src.split("#");                                    // keep #t=… at the end
+      return base + (base.includes("?") ? "&" : "?") + "autoplay=1" + (hash ? "#" + hash : "");
+    }
+    if (src.includes("cloudflarestream.com"))
+      return src + (src.includes("?") ? "&" : "?") + "autoplay=true";
+    return src;
+  }
+
+  // "▶ Watch the video" inside a tip card (Cards + Network views). Only rendered when the
+  // tip has a video; clicking toggles an inline player (removing it stops playback).
+  function renderCardVideo(containerId, tip) {
+    const box = $(containerId);
+    if (!box) return;
+    if (!tip || !tip.video_embed) { box.innerHTML = ""; return; }
+    box.innerHTML = `<button class="video-toggle" type="button">▶ Watch the video</button><div class="video-slot"></div>`;
+    const btn = box.querySelector(".video-toggle");
+    const slot = box.querySelector(".video-slot");
+    btn.onclick = () => {
+      const open = !!slot.innerHTML;
+      slot.innerHTML = open ? "" : videoEmbedHtml(withAutoplay(tip.video_embed));
+      btn.textContent = open ? "▶ Watch the video" : "✕ Hide the video";
+    };
+  }
   // "1:30" / "1:02:03" / "90" → whole seconds; blank → 0. And back the other way for display.
   function parseTime(str) {
     str = (str || "").trim();
@@ -1689,6 +1718,7 @@
   function showCard(tip) {
     $("net-card-content").textContent = tip.content;
     $("net-card-anecdote").textContent = tip.anecdote || "";
+    renderCardVideo("net-card-video", tip);   // "▶ Watch the video" when one is attached
     $("net-card-actions").innerHTML = tipControlsHTML(tip);
     bindTipControls($("net-card-actions"), tip, () => {
       // upvoting changes the favourites profile → re-pick the suggested tip
@@ -2139,6 +2169,7 @@
   function renderCard(tip) {
     $("cv-content").textContent = tip.content;
     $("cv-anecdote").textContent = tip.anecdote || "";
+    renderCardVideo("cv-video", tip);   // "▶ Watch the video" when one is attached
     $("cv-tags").innerHTML = tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("");
     $("cv-actions").innerHTML = tipControlsHTML(tip);
     // a vote changes your favourites profile → re-pick the next tip
@@ -2148,6 +2179,7 @@
   function renderCardEmpty() {
     $("cv-content").textContent = "No tips to show.";
     $("cv-anecdote").textContent = "";
+    renderCardVideo("cv-video", null);
     $("cv-tags").innerHTML = "";
     $("cv-actions").innerHTML = "";
     cardNextId = null;
