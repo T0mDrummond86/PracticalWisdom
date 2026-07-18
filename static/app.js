@@ -247,7 +247,7 @@
 
   function requireLogin() {
     if (currentUser) return true;
-    toast(authEnabled ? "Sign in with Google to vote and save favorites." : "Login isn't configured yet.");
+    toast(authEnabled ? "Sign in with Google to save favourites." : "Login isn't configured yet.");
     return false;
   }
 
@@ -256,7 +256,7 @@
     const value = tip.my_vote === dir ? 0 : dir;  // clicking your current vote again clears it
     const wasFavorited = !!tip.favorited;
     const u = await api("POST", `/api/tips/${tip.id}/vote`, { value });
-    if (!u || u.error) { toast((u && u.error) || "Vote failed."); return false; }
+    if (!u || u.error) { toast((u && u.error) || "Couldn't save that — try again."); return false; }
     Object.assign(tip, u);
     // The journal is the app's deepest feature and the save moment is its doorway —
     // tell people it exists exactly when it becomes relevant (but not on every save).
@@ -271,27 +271,27 @@
     return true;
   }
 
-  // Wire the up/score/down controls found inside `scope` to `tip`. An upvote also
-  // marks the tip as a favorite (favorited is derived from the vote server-side).
+  // Wire the favourite (heart) control found inside `scope` to `tip`.
   // `after` runs after a successful change (e.g. to drop a card from the favorites view).
   function bindTipControls(scope, tip, after) {
-    const up = scope.querySelector(".vote-btn.up");
-    const down = scope.querySelector(".vote-btn.down");
-    const score = scope.querySelector(".vote-score");
+    const heart = scope.querySelector(".fav-btn");
+    const count = scope.querySelector(".fav-count");
     const paint = () => {
-      if (score) score.textContent = tip.score;
-      if (up) up.classList.toggle("on", tip.my_vote === 1);
-      if (down) down.classList.toggle("on", tip.my_vote === -1);
+      if (heart) {
+        heart.classList.toggle("on", tip.my_vote === 1);
+        heart.textContent = tip.my_vote === 1 ? "♥" : "♡";
+        heart.title = tip.my_vote === 1 ? "Remove from favourites" : "Save to favourites";
+      }
+      if (count) count.textContent = tip.score > 0 ? tip.score : "";
     };
-    if (up) up.onclick = async e => { e.stopPropagation(); if (await doVote(tip, 1)) { paint(); after && after(); } };
-    if (down) down.onclick = async e => { e.stopPropagation(); if (await doVote(tip, -1)) { paint(); after && after(); } };
+    if (heart) heart.onclick = async e => { e.stopPropagation(); if (await doVote(tip, 1)) { paint(); after && after(); } };
   }
 
-  // Horizontal up/score/down markup (used by the network card).
+  // The favourite control: one heart + how many people saved the tip (blank when zero).
   function tipControlsHTML(tip) {
-    return `<button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Upvote (saves to favorites)" aria-label="Upvote">▲</button>` +
-           `<span class="vote-score">${tip.score}</span>` +
-           `<button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>`;
+    const fav = tip.my_vote === 1;
+    return `<button class="fav-btn${fav ? " on" : ""}" title="${fav ? "Remove from favourites" : "Save to favourites"}" aria-label="Favourite">${fav ? "♥" : "♡"}</button>` +
+           `<span class="fav-count" title="How many people saved this tip">${tip.score > 0 ? tip.score : ""}</span>`;
   }
 
 
@@ -441,9 +441,7 @@
       card.dataset.id = tip.id;
       card.innerHTML = `
         <div class="vote-col">
-          <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Upvote (saves to favorites)" aria-label="Upvote">▲</button>
-          <span class="vote-score">${tip.score}</span>
-          <button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>
+          ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main"><div class="tip-content">${escHtml(tip.content)}</div>${tipFlagsHTML(tip)}</div>`;
       card.onclick = () => selectTip(tip);
@@ -745,9 +743,7 @@
       card.dataset.id = tip.id;
       card.innerHTML = `
         <div class="vote-col">
-          <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Upvote (saves to favorites)" aria-label="Upvote">▲</button>
-          <span class="vote-score">${tip.score}</span>
-          <button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>
+          ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main">
           <div class="tip-content">${escHtml(tip.content)}</div>
@@ -2488,7 +2484,7 @@
     if (canReflect) $("fav-reflect-btn").onclick = openFavInsights;
     if (!tips.length) {
       list.insertAdjacentHTML("beforeend",
-        `<div id="empty-state">No favorites yet — upvote a tip (▲) to save it.</div>`);
+        `<div id="empty-state">No favorites yet — tap the heart (♡) on a tip to save it.</div>`);
       return;
     }
     tips.forEach(tip => {
@@ -2496,9 +2492,7 @@
       card.className = "tip-card";
       card.innerHTML = `
         <div class="vote-col">
-          <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Upvote (saves to favorites)" aria-label="Upvote">▲</button>
-          <span class="vote-score">${tip.score}</span>
-          <button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>
+          ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main">
           <div class="tip-content">${escHtml(tip.content)}</div>
@@ -2689,9 +2683,7 @@
       const pct = tip.similarity != null ? `<span class="sim-badge">${simLabel(tip.similarity)}</span>` : "";
       card.innerHTML = `
         <div class="vote-col">
-          <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Save to favorites" aria-label="Save to favorites">▲</button>
-          <span class="vote-score">${tip.score}</span>
-          <button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>
+          ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main">
           <div class="tip-content">${escHtml(tip.content)}</div>
