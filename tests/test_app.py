@@ -901,6 +901,123 @@ def test_unfavoriting_keeps_journal(client, app_module):
     assert [e["content"] for e in entries] == ["kept?"]
 
 
+# ── Growth features ────────────────────────────────────────────────────────
+def test_events_whitelist_and_stats(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = get_csrf(client)
+    assert client.post("/api/events", json={"name": "nonsense"},
+                       headers={"X-CSRF-Token": token}).status_code == 400
+    assert client.post("/api/events", json={"name": "view_tip", "tip_id": tid},
+                       headers={"X-CSRF-Token": token}).status_code == 200
+    assert client.get("/api/stats").status_code == 403     # admin only
+    login_admin(client)
+    stats = client.get("/api/stats").get_json()
+    assert any(r["name"] == "view_tip" and r["n"] == 1 for r in stats["by_name"])
+    assert stats["top_tips"][0]["tip_id"] == tid
+
+
+def test_practice_lifecycle(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    assert client.get("/api/practice").get_json() == {"practice": None}   # anonymous
+    token = login_user(client, uid)
+    r = client.post("/api/practice", json={"tip_id": tid}, headers={"X-CSRF-Token": token}).get_json()
+    assert r["practice"]["tip"]["id"] == tid and r["practice"]["entries"] == 0
+    client.post(f"/api/tips/{tid}/journal", json={"content": "went ok"},
+                headers={"X-CSRF-Token": token})
+    assert client.get("/api/practice").get_json()["practice"]["entries"] == 1
+    client.delete("/api/practice", headers={"X-CSRF-Token": token})
+    assert client.get("/api/practice").get_json() == {"practice": None}
+
+
+def test_revisit_surfaces_stale_favourite(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    client.post(f"/api/tips/{tid}/vote", json={"value": 1}, headers={"X-CSRF-Token": token})
+    assert client.get("/api/journal/revisit").get_json() == {"revisit": None}  # no entries yet
+    with app_module.get_db() as conn:   # backdate an entry 30 days
+        conn.execute("INSERT INTO journal_entries (user_id, tip_id, kind, content, created_at) "
+                     "VALUES (?, ?, 'entry', 'old', datetime('now', '-30 days'))", (uid, tid))
+        conn.commit()
+    rv = client.get("/api/journal/revisit").get_json()["revisit"]
+    assert rv["tip"]["id"] == tid and rv["days"] >= 29
+
+
+def test_weekly_review_gating_and_result(client, app_module, monkeypatch):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    assert client.post("/api/journal/weekly-review",
+                       headers={"X-CSRF-Token": token}).status_code == 503   # llm off
+    monkeypatch.setattr(app_module.llm, "is_enabled", lambda: True)
+    assert client.post("/api/journal/weekly-review",
+                       headers={"X-CSRF-Token": token}).status_code == 400   # no entries
+    client.post(f"/api/tips/{tid}/journal", json={"content": "kept my cool"},
+                headers={"X-CSRF-Token": token})
+    monkeypatch.setattr(app_module.llm, "weekly_review",
+                        lambda entries: {"review": "Good week: " + entries[0]["entry"]})
+    body = client.post("/api/journal/weekly-review",
+                       headers={"X-CSRF-Token": token}).get_json()
+    assert body["review"] == "Good week: kept my cool"
+
+
+def test_paths_crud_and_reader_view(client, app_module):
+    t1 = add_tip(app_module, "One", ["moral"])
+    t2 = add_tip(app_module, "Two", ["moral"])
+    token = get_csrf(client)
+    assert client.post("/api/paths", json={"title": "x", "tip_ids": [t1]},
+                       headers={"X-CSRF-Token": token}).status_code == 403   # admin only
+    token = login_admin(client)
+    p = client.post("/api/paths", json={"title": "Starter", "description": "d",
+                                        "tip_ids": [t2, t1]},
+                    headers={"X-CSRF-Token": token}).get_json()
+    assert p["tip_ids"] == [t2, t1]   # order preserved
+    lst = client.get("/api/paths").get_json()["paths"]
+    assert lst[0]["title"] == "Starter" and lst[0]["tips"] == 2
+    client.delete(f"/api/paths/{p['id']}", headers={"X-CSRF-Token": token})
+    assert client.get("/api/paths").get_json()["paths"] == []
+
+
+def test_share_page_public(client, app_module):
+    tid = add_tip(app_module, "Be patient with people", ["moral"])
+    r = client.get(f"/tip/{tid}")
+    assert r.status_code == 200
+    assert b"Be patient with people" in r.data
+    assert b"og:description" in r.data
+    assert f"/?tip={tid}".encode() in r.data
+    assert client.get("/tip/999999").status_code == 404
+
+
+def test_push_subscribe_roundtrip(client, app_module):
+    uid = make_user(app_module)
+    token = get_csrf(client)
+    sub = {"endpoint": "https://push.example/abc", "keys": {"p256dh": "k1", "auth": "k2"}}
+    assert client.post("/api/push/subscribe", json={"subscription": sub},
+                       headers={"X-CSRF-Token": token}).status_code == 401   # sign in first
+    token = login_user(client, uid)
+    assert client.post("/api/push/subscribe", json={"subscription": {"endpoint": "x"}},
+                       headers={"X-CSRF-Token": token}).status_code == 400   # malformed
+    assert client.post("/api/push/subscribe", json={"subscription": sub},
+                       headers={"X-CSRF-Token": token}).get_json()["subscribed"] is True
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM push_subscriptions").fetchone()["c"] == 1
+    client.delete("/api/push/subscribe", json={"endpoint": sub["endpoint"]},
+                  headers={"X-CSRF-Token": token})
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT COUNT(*) c FROM push_subscriptions").fetchone()["c"] == 0
+
+
+def test_backup_writes_and_prunes(app_module, tmp_path):
+    add_tip(app_module, "Backed up", ["moral"])
+    path = app_module.write_backup()
+    import os
+    assert os.path.exists(path) and path.endswith(".xlsx")
+    from openpyxl import load_workbook
+    ws = load_workbook(path).active
+    assert any(row[1] == "Backed up" for row in ws.iter_rows(min_row=2, values_only=True))
+
+
 def test_my_submissions_anonymous_is_empty(client):
     assert client.get("/api/submissions/mine").get_json() == {"submissions": []}
 

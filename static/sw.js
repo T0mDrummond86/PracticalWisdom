@@ -10,7 +10,28 @@
  *
  * Bump CACHE when you ship new shell assets — the old cache is purged on activate.
  */
-const CACHE = "pw-cache-v7";
+const CACHE = "pw-cache-v8";
+
+// ── Daily-tip notifications ──
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (e) {}
+  event.waitUntil(self.registration.showNotification(data.title || "Practical Wisdom", {
+    body: data.body || "",
+    icon: "/static/icons/icon-192.png",
+    badge: "/static/icons/icon-192.png",
+    data: { url: data.tip_id ? "/?tip=" + data.tip_id : "/" },
+  }));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const url = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil(clients.matchAll({ type: "window", includeUncontrolled: true }).then(list => {
+    for (const c of list) { if ("focus" in c) { c.navigate(url); return c.focus(); } }
+    return clients.openWindow(url);
+  }));
+});
 
 const SHELL = [
   "/",

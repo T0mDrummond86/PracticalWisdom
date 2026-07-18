@@ -82,6 +82,8 @@
           <button class="btn secondary" id="manage-tags-btn">Delete tags</button>
           <button class="btn secondary" id="review-subs-btn">Review submissions</button>
           <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">✨ Rebuild semantic index</button>
+          <button class="btn secondary" id="manage-paths-btn">🧭 Curated paths</button>
+          <button class="btn secondary" id="usage-stats-btn">📈 Usage stats</button>
           <div class="mgmt-sep"></div>
           <button class="btn secondary" id="export-xlsx-btn">⤓ Export all tips (Excel)</button>
           <button class="btn secondary" id="import-xlsx-btn">⤒ Import tips from Excel…</button>
@@ -149,6 +151,8 @@
           <button class="btn secondary" id="cv-suggest-mode" style="display:none" title="How the next tip is chosen: by shared tags, or by meaning"></button>
         </div>
         <div id="cv-redirect" class="hidden">
+          <div class="cv-redirect-label" id="cv-paths-label" style="display:none">Follow a path</div>
+          <div id="cv-paths"></div>
           <div class="cv-redirect-label">Jump to a theme</div>
           <div id="cv-redirect-groups"></div>
           <div class="cv-redirect-label">Or describe where to explore next</div>
@@ -237,6 +241,10 @@
     </div>
     <div id="analysis-tip"></div>
     <div id="analysis-video"></div>
+    <div id="tip-tools">
+      <button class="btn secondary" id="share-tip-btn" title="Copy a public link to this tip">🔗 Share</button>
+      <button class="btn secondary" id="practice-tip-btn" style="display:none" title="Pin this tip as the one you're practising this week">⭑ Practice this week</button>
+    </div>
     <div class="analysis-label">Choose an angle — generated on demand</div>
     <div id="analysis-options">
       <button class="analysis-opt" data-lens="apply">How to apply it</button>
@@ -440,6 +448,46 @@
   </div>
 </div>
 
+<!-- Weekly review modal -->
+<div class="overlay hidden" id="week-overlay">
+  <div class="modal" style="width:560px;max-width:96vw;max-height:92vh;overflow-y:auto">
+    <h2>Your week in review</h2>
+    <p class="insights-sub">The AI reads this week's journal entries across all your tips and reflects back the thread — what moved, what kept catching, and one focus for next week.</p>
+    <div id="week-body"></div>
+    <div class="modal-actions"><button class="btn" id="week-close">Close</button></div>
+  </div>
+</div>
+
+<!-- Manage paths modal (admin) -->
+<div class="overlay hidden" id="paths-overlay">
+  <div class="modal" style="width:760px;max-width:96vw;max-height:92vh">
+    <h2>Curated paths</h2>
+    <p class="insights-sub">A path is an ordered sequence of tips readers can follow in Cards view. Click tips below to add them in order; click an added tip to remove it.</p>
+    <div id="paths-existing"></div>
+    <div id="path-controls">
+      <input id="path-title" type="text" placeholder="Path title, e.g. Starting out: Focus" autocomplete="off" />
+      <input id="path-desc" type="text" placeholder="One-line description (optional)" autocomplete="off" />
+    </div>
+    <input id="path-filter" type="text" placeholder="Filter tips by text…" autocomplete="off" />
+    <div id="path-picked"></div>
+    <div id="path-tip-list"></div>
+    <div id="paths-status" style="font-size:0.8rem;min-height:1em"></div>
+    <div class="modal-actions">
+      <button class="btn secondary" id="paths-close">Close</button>
+      <button class="btn" id="path-save">Create path</button>
+    </div>
+  </div>
+</div>
+
+<!-- Usage stats modal (admin) -->
+<div class="overlay hidden" id="stats-overlay">
+  <div class="modal" style="width:640px;max-width:96vw;max-height:92vh;overflow-y:auto">
+    <h2>Usage — last 30 days</h2>
+    <div id="stats-body"></div>
+    <div class="modal-actions"><button class="btn" id="stats-close">Close</button></div>
+  </div>
+</div>
+
 <!-- First-run welcome (shown once; dismissible) -->
 <div class="overlay hidden" id="intro-overlay">
   <div class="modal" style="width:520px;max-width:96vw">
@@ -504,6 +552,8 @@
         <li>In Favorites, open a tip and pick an <strong>angle</strong> under “Explore this tip” to see it from different perspectives.</li>
         <li><strong>Your journal</strong> — in the same pane, log how applying the tip went. It's private to you, and your entries survive even if you un-favorite the tip.</li>
         <li><strong>✨ Get AI feedback</strong> — the AI reads the tip and your whole journal for it, then coaches you on applying it more effectively. The feedback is saved into the journal so you can re-read it later.</li>
+        <li><strong>⭑ Practice this week</strong> — pin one tip as your current practice; Favorites shows your progress and nudges you to journal it. A <strong>weekly review</strong> lets the AI reflect on all of the week's entries.</li>
+        <li><strong>🔗 Share</strong> — copy a public link to any tip; <strong>🔔 Daily tip</strong> (in your account menu, on the installed app) sends one tip each morning.</li>
       </ul>
     </div>
 
@@ -536,6 +586,8 @@
             <li><em>Import tips from Excel</em> — load a spreadsheet back in to refill the database (matched by tip text, so re-importing won't duplicate).</li>
             <li><em>Clear all tips</em> — permanently delete every tip at once (tag names are kept). This cannot be undone, so export a backup first.</li>
             <li><em>Clear all tags</em> — permanently delete the entire tag list and unlink every tip from its tags (the tips themselves stay). This cannot be undone.</li>
+            <li><em>Curated paths</em> — author ordered tip sequences readers can follow in Cards view.</li>
+            <li><em>Usage stats</em> — 30-day counts of what's viewed and used. A nightly backup .xlsx is also written next to the database (last 14 kept).</li>
           </ul>
         </li>
         <li><strong>Signing in / out of admin</strong> — use <em>Admin sign-in</em> and <em>Exit admin mode</em> in your account menu.</li>

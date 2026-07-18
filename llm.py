@@ -164,6 +164,29 @@ def journal_feedback(tip_text, entries):
     return {"feedback": parsed["feedback"].strip()}
 
 
+def weekly_review(entries):
+    """Coach a user on their WEEK of practice across every tip they journalled.
+
+    `entries` is a list of {"tip", "entry", "date"}, oldest first. Returns {"review": str}.
+    Raises LLMError on failure."""
+    log = "\n".join('- [%s] on "%s": %s' % (e["date"], e["tip"], e["entry"]) for e in entries)
+    prompt = (
+        "You are a direct, practical coach reviewing one person's week of trying to live by "
+        "pieces of practical wisdom. Below are their dated journal entries, each tagged with "
+        "the tip they were practising.\n\n"
+        "Write a short weekly review in plain flowing prose (2-3 short paragraphs, no headings, "
+        "no markdown): 1) the real thread of the week — what actually moved, named specifically; "
+        "2) the friction that showed up more than once, if any; 3) one concrete focus for next "
+        "week, tied to what they wrote. No flattery, no restating their entries back at them.\n\n"
+        'Return a JSON object: {"review": "<the text>"}\n\n'
+        "This week's journal:\n%s"
+    ) % log
+    parsed = _complete_json(prompt, temperature=0.6)
+    if not isinstance(parsed, dict) or not (parsed.get("review") or "").strip():
+        raise LLMError("unexpected response shape")
+    return {"review": parsed["review"].strip()}
+
+
 def advise(situation, tips):
     """Generate advice for a user's situation, grounded ONLY in the supplied tips (RAG).
 
