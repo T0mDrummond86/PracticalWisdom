@@ -112,7 +112,8 @@
           <button class="net-seg" id="linkmode-tags">Tags</button>
           <button class="net-seg" id="linkmode-related">Meaning ✨</button>
         </div>
-        <div class="net-card-tags-label" id="net-card-tags-label">Secondary tags — click to include/leave out · click OR/AND to combine</div>
+        <button class="net-refine-toggle" id="net-refine-toggle" aria-expanded="false">Refine links by tag…</button>
+        <div class="net-card-tags-label" id="net-card-tags-label">Click tags to include/leave out · OR/AND to combine</div>
         <div id="net-card-tags"></div>
         <div id="net-card-related-note" style="display:none"></div>
       </div>
@@ -168,7 +169,6 @@
     <div class="detail-head">
       <button class="detail-close" id="detail-close" aria-label="Back to list">‹ Back</button>
       <h2>Tip</h2>
-      <button class="btn" id="delete-tip-btn" style="background:#c0392b">Delete</button>
     </div>
     <textarea id="detail-content" placeholder="The tip…"></textarea>
     <div id="detail-anecdote-wrap">
@@ -212,8 +212,13 @@
         <h2 style="margin-top:4px">Add from existing tags</h2>
         <div id="tag-palette"></div>
       </div>
+    </div>
+    <!-- One sticky commit bar: Save is always in reach; Delete is demoted to a quiet
+         corner of the same bar (frequency should drive prominence, and Delete is rare). -->
+    <div id="detail-footer">
       <button class="btn" id="save-tags-btn">Save</button>
       <div id="save-status"></div>
+      <button class="detail-delete" id="delete-tip-btn" title="Delete this tip">Delete tip…</button>
     </div>
   </div>
 
@@ -423,6 +428,24 @@
     <div class="modal-actions">
       <button class="btn secondary" id="insights-regen" style="display:none">↻ Regenerate</button>
       <button class="btn" id="insights-close">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- First-run welcome (shown once; dismissible) -->
+<div class="overlay hidden" id="intro-overlay">
+  <div class="modal" style="width:520px;max-width:96vw">
+    <h2>Welcome to Practical Wisdom</h2>
+    <p class="insights-sub">A library of short, practical wisdom — explore it, save what resonates, and get help living by it.</p>
+    <ul class="help-list" style="margin-bottom:6px">
+      <li><strong>Network</strong> — wander a map of tips clustered by theme; follow the links between ideas.</li>
+      <li><strong>Cards</strong> — read one tip at a time; swipe or click through.</li>
+      <li><strong>Ask</strong> — describe a situation in your own words and get advice grounded in the most relevant tips.</li>
+    </ul>
+    <p class="insights-sub" style="margin-top:8px"><strong>Signing in</strong> (free, with Google) lets you save favourites, keep a private journal on the tips you're practising, and get AI coaching on how it's going.</p>
+    <div class="modal-actions">
+      <button class="btn secondary" id="intro-help-btn" style="margin-right:auto">Open the full guide</button>
+      <button class="btn" id="intro-close">Start exploring</button>
     </div>
   </div>
 </div>

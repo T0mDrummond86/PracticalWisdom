@@ -145,10 +145,30 @@
             `<button class="account-item" id="logout-btn" role="menuitem">Sign out</button>` +
           `</div>` +
         `</div>`);
-    } else if (authEnabled) {
-      parts.push(`<a class="btn google-btn" href="/login">Sign in with Google</a>`);
+    } else {
+      // Signed-out visitors still get Help and an appearance switch — and the sign-in
+      // button says what signing in is FOR.
+      parts.push(`<button class="btn secondary icon-btn" id="help-open-btn" title="Help & how-to" aria-label="Help">?</button>`);
+      parts.push(`<button class="btn secondary icon-btn" id="theme-cycle-btn" title="Switch appearance (light / medium / dark)" aria-label="Switch appearance">◐</button>`);
+      if (authEnabled) {
+        parts.push(`<a class="btn google-btn" href="/login" title="Sign in to save favourites & keep a journal">Sign in with Google</a>`);
+      }
+    }
+    // An active admin session is always visible and exitable, Google or no Google.
+    if (isAdmin && !currentUser) {
+      parts.push(`<span class="admin-badge" title="Administrator">ADMIN</span>` +
+        `<button class="btn secondary" id="admin-logout-btn">Exit admin</button>`);
     }
     el.innerHTML = parts.join("");
+    if (!currentUser) {
+      $("help-open-btn").onclick = openHelp;
+      $("theme-cycle-btn").onclick = () => {
+        const next = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length];
+        applyTheme(next);
+        toast("Appearance: " + next[0].toUpperCase() + next.slice(1));
+      };
+      if (isAdmin) $("admin-logout-btn").onclick = adminSignOut;
+    }
     if (currentUser) {
       const trigger = $("account-trigger"), menu = $("account-menu");
       trigger.onclick = e => {
@@ -234,9 +254,20 @@
   async function doVote(tip, dir) {
     if (!requireLogin()) return false;
     const value = tip.my_vote === dir ? 0 : dir;  // clicking your current vote again clears it
+    const wasFavorited = !!tip.favorited;
     const u = await api("POST", `/api/tips/${tip.id}/vote`, { value });
     if (!u || u.error) { toast((u && u.error) || "Vote failed."); return false; }
     Object.assign(tip, u);
+    // The journal is the app's deepest feature and the save moment is its doorway —
+    // tell people it exists exactly when it becomes relevant (but not on every save).
+    if (u.favorited && !wasFavorited) {
+      let n = 0;
+      try { n = parseInt(localStorage.getItem("favHintCount") || "0", 10); } catch (e) {}
+      if (n < 3) {
+        toast("Saved to Favorites — open it there to explore angles or start a journal.");
+        try { localStorage.setItem("favHintCount", String(n + 1)); } catch (e) {}
+      }
+    }
     return true;
   }
 
@@ -263,6 +294,21 @@
            `<button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>`;
   }
 
+
+  // Small authored-content markers on admin list cards, so an admin can see at a glance
+  // which tips already carry a video or hand-written angle text.
+  function tipFlagsHTML(tip) {
+    const flags = [];
+    if (tip.video_url) flags.push(`<span class="tip-flag" title="Has a video">▶ video</span>`);
+    const n = Object.keys(tip.analysis || {}).length;
+    if (n) flags.push(`<span class="tip-flag" title="Hand-written angle text">✎ ${n} angle${n !== 1 ? "s" : ""}</span>`);
+    return flags.length ? `<div class="tip-flags">${flags.join("")}</div>` : "";
+  }
+
+  // Similarity scores in plain words — "66%" reads like engineering, not guidance.
+  function simLabel(s) {
+    return s >= 0.72 ? "very close" : s >= 0.6 ? "close" : "related";
+  }
 
   let toastTimer;
   function toast(msg) {
@@ -399,7 +445,7 @@
           <span class="vote-score">${tip.score}</span>
           <button class="vote-btn down${tip.my_vote === -1 ? " on" : ""}" title="Downvote" aria-label="Downvote">▼</button>
         </div>
-        <div class="tip-main"><div class="tip-content">${escHtml(tip.content)}</div></div>`;
+        <div class="tip-main"><div class="tip-content">${escHtml(tip.content)}</div>${tipFlagsHTML(tip)}</div>`;
       card.onclick = () => selectTip(tip);
       bindTipControls(card, tip);
       list.appendChild(card);
@@ -681,15 +727,20 @@
       `<div class="fav-list-head">${head}<button class="btn secondary" id="search-clear">✕ Clear</button></div>`;
     $("search-clear").onclick = clearSearch;
     if (!results.length) {
+      // Don't dead-end: the smarter mode is one click away and usually finds something.
+      const offerMeaning = mode !== "meaning" && embeddingsEnabled;
       panel.insertAdjacentHTML("beforeend",
-        `<div id="empty-state">No tips matched “${escHtml(q)}”.</div>`);
+        `<div id="empty-state">No tips matched “${escHtml(q)}”.` +
+        (offerMeaning ? `<br><button class="btn" id="try-meaning-btn" style="margin-top:12px">✨ Try Meaning search</button>` : "") +
+        `</div>`);
+      if (offerMeaning) $("try-meaning-btn").onclick = () => setSearchMode("meaning", true);
       return;
     }
     results.forEach(tip => {
       const card = document.createElement("div");
       card.className = "tip-card";
       const badge = (mode === "meaning" && tip.similarity != null)
-        ? `<span class="sim-badge" title="How close this tip is in meaning">${Math.round(tip.similarity * 100)}%</span>`
+        ? `<span class="sim-badge" title="How close this tip is in meaning">${simLabel(tip.similarity)}</span>`
         : "";
       card.dataset.id = tip.id;
       card.innerHTML = `
@@ -702,10 +753,10 @@
           <div class="tip-content">${escHtml(tip.content)}</div>
           ${tip.tags.length ? `<div class="tip-tags">${tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("")}</div>` : ""}
         </div>${badge}`;
-      if (currentView === "favorites") {
-        card.classList.toggle("selected", selectedFav?.id === tip.id);
-        card.onclick = () => openFavAnalysis(tip);
-      }
+      // Every search result opens the Explore pane — signed-in or not. Reading is never
+      // gated; sign-in gates saving (votes/journal), which the pane handles itself.
+      card.classList.toggle("selected", selectedFav?.id === tip.id);
+      card.onclick = () => openFavAnalysis(tip);
       bindTipControls(card, tip);
       panel.appendChild(card);
     });
@@ -1305,7 +1356,10 @@
     NET.transform = { x: 0, y: 0, k: 1 };
     // Phones open on the region-bubble overview; tapping a bubble expands to the full network
     // (all regions at once — no zoom into one, nothing hidden). Desktop opens on the full network.
-    if (isMobileNet()) showOverview(); else showFull();
+    // Remember which mode and box we laid out for, so a later resize can detect staleness.
+    NET.mobileMode = isMobileNet();
+    NET.builtW = NET.W;
+    if (NET.mobileMode) showOverview(); else showFull();
   }
 
   // One cluster per primary tag, arranged evenly on a ring around the centre.
@@ -1399,6 +1453,11 @@
       c.setAttribute("fill", color);
       c.setAttribute("class", "net-node");
       c.style.color = color;  // drives the currentColor glow on hover/select
+      // An invisible stroke widens the hit area so every node is a comfortable target
+      // (small dots would otherwise be ~7px). pointer-events:all counts the unpainted stroke.
+      c.style.pointerEvents = "all";
+      c.setAttribute("stroke", "transparent");
+      c.setAttribute("stroke-width", Math.max(0, (12 - n.r) * 2));
       c.addEventListener("mouseenter", e => onNodeHover(n, e));
       c.addEventListener("mousemove", moveTooltip);
       c.addEventListener("mouseleave", () => onNodeOut(n));
@@ -1488,11 +1547,14 @@
       simTick();
       positionNodes();
       drawCanvas();
-      NET.alpha *= 0.985;
-      if (NET.alpha > 0.025) {
+      NET.alpha *= 0.975;   // settle within ~2s — nodes are click targets, not decoration
+      if (NET.alpha > 0.03) {
         NET.raf = requestAnimationFrame(step);
       } else {
         NET.raf = null;
+        NET.nodes.forEach(n => { n.vx = 0; n.vy = 0; });  // full stop: targets stay put
+        positionNodes();
+        drawCanvas();
         frameCurrentLevel();  // tidy final framing
       }
     };
@@ -1719,6 +1781,10 @@
     $("net-card-content").textContent = tip.content;
     $("net-card-anecdote").textContent = tip.anecdote || "";
     renderCardVideo("net-card-video", tip);   // "▶ Watch the video" when one is attached
+    // A fresh selection starts with the tag-refinement tools tucked away again.
+    $("net-card").classList.remove("refine-open");
+    const rt = $("net-refine-toggle");
+    rt.textContent = "Refine links by tag…"; rt.setAttribute("aria-expanded", "false");
     $("net-card-actions").innerHTML = tipControlsHTML(tip);
     bindTipControls($("net-card-actions"), tip, () => {
       // upvoting changes the favourites profile → re-pick the suggested tip
@@ -1739,11 +1805,23 @@
     const related = NET.linkMode === "related" && embeddingsEnabled;
     $("linkmode-tags").classList.toggle("active", !related);
     $("linkmode-related").classList.toggle("active", related);
-    // The secondary-tag expression builder only makes sense in tag mode.
-    $("net-card-tags-label").style.display = related ? "none" : "";
-    $("net-card-tags").style.display = related ? "none" : "";
+    // The secondary-tag expression builder only makes sense in tag mode — and it's a
+    // power tool, so it stays behind a "Refine links by tag…" disclosure by default.
+    const refineOpen = $("net-card").classList.contains("refine-open");
+    $("net-refine-toggle").style.display = related ? "none" : "";
+    $("net-card-tags-label").style.display = (related || !refineOpen) ? "none" : "";
+    $("net-card-tags").style.display = (related || !refineOpen) ? "none" : "";
     $("net-card-related-note").style.display = related ? "" : "none";
   }
+
+  $("net-refine-toggle").onclick = e => {
+    e.stopPropagation();
+    const open = $("net-card").classList.toggle("refine-open");
+    const t = $("net-refine-toggle");
+    t.textContent = open ? "Hide tag refinements" : "Refine links by tag…";
+    t.setAttribute("aria-expanded", String(open));
+    renderLinkModeUI();
+  };
 
   function setLinkMode(mode) {
     NET.linkMode = mode;
@@ -2608,7 +2686,7 @@
     list.forEach(tip => {
       const card = document.createElement("div");
       card.className = "tip-card";
-      const pct = tip.similarity != null ? `<span class="sim-badge">${Math.round(tip.similarity * 100)}%</span>` : "";
+      const pct = tip.similarity != null ? `<span class="sim-badge">${simLabel(tip.similarity)}</span>` : "";
       card.innerHTML = `
         <div class="vote-col">
           <button class="vote-btn up${tip.my_vote === 1 ? " on" : ""}" title="Save to favorites" aria-label="Save to favorites">▲</button>
@@ -2682,6 +2760,46 @@
   }
   $("help-close").onclick = () => $("help-overlay").classList.add("hidden");
   dismissOnBackdrop("help-overlay");
+
+  // ── First-run welcome: shown once per browser, so newcomers aren't left guessing ──
+  function maybeShowIntro() {
+    try {
+      if (localStorage.getItem("introSeen")) return;
+    } catch (e) { return; }
+    $("intro-overlay").classList.remove("hidden");
+  }
+  function dismissIntro() {
+    $("intro-overlay").classList.add("hidden");
+    try { localStorage.setItem("introSeen", "1"); } catch (e) {}
+  }
+  $("intro-close").onclick = dismissIntro;
+  $("intro-help-btn").onclick = () => { dismissIntro(); openHelp(); };
+  dismissOnBackdrop("intro-overlay");
+  $("intro-overlay").addEventListener("click", e => {
+    if (e.target === $("intro-overlay")) dismissIntro();   // backdrop dismiss also marks it seen
+  });
+
+  // ── iOS install hint: Safari never prompts, so tell iPhone users the manual path ──
+  // Only when this build is actually installable (a manifest is linked — i.e. the PWA
+  // branch), we're on iOS Safari, and not already running as an installed app.
+  function maybeShowIosHint() {
+    if (!document.querySelector('link[rel="manifest"]')) return;
+    const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const standalone = window.navigator.standalone === true ||
+      window.matchMedia("(display-mode: standalone)").matches;
+    let dismissed = false;
+    try { dismissed = !!localStorage.getItem("iosHintDismissed"); } catch (e) {}
+    if (!isIos || standalone || dismissed) return;
+    const bar = document.createElement("div");
+    bar.id = "ios-hint";
+    bar.innerHTML = `<span>Install this app: tap <b>Share</b> <span aria-hidden="true">⎋</span> then <b>Add to Home Screen</b>.</span>` +
+      `<button id="ios-hint-close" aria-label="Dismiss">×</button>`;
+    document.body.appendChild(bar);
+    bar.querySelector("#ios-hint-close").onclick = () => {
+      bar.remove();
+      try { localStorage.setItem("iosHintDismissed", "1"); } catch (e) {}
+    };
+  }
 
   async function loadSuggestHistory() {
     const res = await api("GET", "/api/submissions/mine");
@@ -2844,7 +2962,9 @@
   $("linkmode-related").onclick = () => setLinkMode("related");
   $("net-reset").onclick = resetView;
   // Re-layout reshuffles the tips of the region you're exploring (no-op in the overview).
-  $("net-relayout").onclick = () => { scatterNodes(); startSim(); };   // re-run the force layout
+  // Re-layout is the recovery button: rebuild the whole view for the current window —
+  // re-picks phone/desktop mode and recomputes cluster geometry, then re-runs the layout.
+  $("net-relayout").onclick = () => buildNetwork();
   $("net-clear-history").onclick = async () => {
     NET.visited = new Set();
     NET.prevSelected = null;
@@ -2891,6 +3011,14 @@
     if (currentView !== "network" || !NET.nodes.length) return;
     const rect = $("network-view").getBoundingClientRect();
     if (rect.width < 5 || rect.height < 5) return;  // hidden / mid-transition
+    // If the window crossed the phone/desktop boundary, or the layout was computed while
+    // the container was effectively invisible (near-zero box), the current layout is wrong
+    // in a way reframing can't fix — rebuild the view for the new geometry.
+    if (isMobileNet() !== NET.mobileMode || NET.builtW < 50) {
+      clearTimeout(NET.reinitTimer);
+      NET.reinitTimer = setTimeout(() => { if (currentView === "network") buildNetwork(); }, 250);
+      return;
+    }
     sizeNetwork();
     frameCurrentLevel();  // reframe to the new box, keep layout
   }
@@ -2934,4 +3062,6 @@
   (async () => {
     await loadMe();
     applyRolePermissions();
+    maybeShowIntro();     // first visit only: a one-screen "what is this?"
+    maybeShowIosHint();   // installed-PWA-capable iOS Safari: how to add to Home Screen
   })();

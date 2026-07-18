@@ -380,17 +380,34 @@ def fulltext_search():
     except ValueError:
         k = 50
     match = _fts_match(q)
-    if not match:
+    if not match and not q:
         return jsonify({"results": []})
     with get_db() as conn:
-        try:
-            rows = conn.execute(
-                "SELECT rowid FROM tips_fts WHERE tips_fts MATCH ? ORDER BY rank LIMIT ?",
-                (match, k),
+        ids = []
+        if match:
+            try:
+                rows = conn.execute(
+                    "SELECT rowid FROM tips_fts WHERE tips_fts MATCH ? ORDER BY rank LIMIT ?",
+                    (match, k),
+                ).fetchall()
+            except sqlite3.OperationalError as e:
+                return jsonify({"error": "Search failed: %s" % e}), 500
+            ids = [r["rowid"] for r in rows]
+        # Tags aren't in the FTS index, but users search by them constantly ("patience").
+        # Append tips whose tag names match any query word, after the text matches.
+        seen = set(ids)
+        words = [w.strip().lower() for w in re.split(r"\W+", q) if len(w.strip()) >= 3]
+        for w in words:
+            tag_rows = conn.execute(
+                "SELECT DISTINCT tt.tip_id FROM tip_tags tt JOIN tags t ON tt.tag_id = t.id "
+                "WHERE t.name LIKE ? ORDER BY tt.tip_id",
+                ("%" + w + "%",),
             ).fetchall()
-        except sqlite3.OperationalError as e:
-            return jsonify({"error": "Search failed: %s" % e}), 500
-        results = [t for t in (tip_with_tags(conn, r["rowid"]) for r in rows) if t]
+            for r in tag_rows:
+                if r["tip_id"] not in seen and len(ids) < k:
+                    seen.add(r["tip_id"])
+                    ids.append(r["tip_id"])
+        results = [t for t in (tip_with_tags(conn, i) for i in ids) if t]
     return jsonify({"results": results})
 
 
