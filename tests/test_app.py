@@ -347,6 +347,20 @@ def test_fts_prefix_and_stemming(client, app_module):
     assert any("mornings" in t["content"] for t in client.get("/api/tips/fts?q=morn").get_json()["results"])
 
 
+def test_fts_matches_tag_names(client, app_module):
+    # A query that appears only as a TAG (not in any tip's text) must still find the tip.
+    add_tip(app_module, "Pause before replying to a hard message", ["emotional", "patience"])
+    add_tip(app_module, "Save money every week", ["financial"])
+    results = client.get("/api/tips/fts?q=patience").get_json()["results"]
+    contents = [t["content"] for t in results]
+    assert "Pause before replying to a hard message" in contents
+    assert "Save money every week" not in contents
+    # text matches still rank first when both kinds exist
+    add_tip(app_module, "True patience is daily", ["moral"])
+    results = client.get("/api/tips/fts?q=patience").get_json()["results"]
+    assert results[0]["content"] == "True patience is daily"
+
+
 def test_fts_indexes_new_tip_via_api(client):
     token = login_admin(client)
     client.post("/api/tips", json={"content": "Stretch every hour", "tags": ["physical"]},

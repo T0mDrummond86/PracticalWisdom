@@ -54,7 +54,7 @@
   /* Text hierarchy */
   --text: #23261f;               /* primary — wisdom text */
   --text-secondary: #5b6053;     /* secondary — metadata, body */
-  --text-tertiary: #8c917f;      /* tertiary — counts, hints, labels */
+  --text-tertiary: #636857;      /* tertiary — counts, hints, labels */
 
   /* Borders (used sparingly) */
   --border: #e6e4d9;
@@ -115,7 +115,7 @@
 
   --text: #e7eaf3;
   --text-secondary: #a2abc2;
-  --text-tertiary: #6e7894;
+  --text-tertiary: #8f99b3;
 
   --border: #26304e;
   --border-subtle: #1b2440;
@@ -160,7 +160,7 @@
 
   --text: #eef1f7;
   --text-secondary: #bcc3d2;
-  --text-tertiary: #868ea4;
+  --text-tertiary: #b0b7ca;
 
   --border: #454e62;
   --border-subtle: #3a4254;
@@ -374,6 +374,21 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 #net-card .video-toggle:hover { background: rgba(255,255,255,0.18); color: #fff; }
 .video-slot:not(:empty) { margin-top: 9px; }
 
+/* Authored-content markers on admin list cards */
+.tip-flags { display: flex; gap: 8px; margin-top: 5px; }
+.tip-flag {
+  font-size: 0.68rem; color: var(--text-tertiary); background: var(--accent-wash);
+  border-radius: var(--r-pill); padding: 1px 8px;
+}
+
+/* Disclosure for the tag-expression power tool inside the network card */
+.net-refine-toggle {
+  margin-top: 10px; background: none; border: none; cursor: pointer; font-family: inherit;
+  font-size: 0.74rem; color: #aeb8c6; text-decoration: underline; text-underline-offset: 3px;
+  padding: 2px 0; text-align: left;
+}
+.net-refine-toggle:hover { color: #e6edf5; }
+
 /* ── Tip journal (Explore pane): private log + saved AI coaching ── */
 #journal-section { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
 #journal-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
@@ -450,6 +465,19 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
   display: flex; flex-direction: column; gap: var(--s-4); overflow-y: auto;
 }
 #detail-pane.hidden { display: none; }
+/* Sticky commit bar: Save never scrolls out of reach in the long editor. */
+#detail-footer {
+  position: sticky; bottom: calc(-1 * var(--s-6)); margin: 0 calc(-1 * var(--s-5));
+  padding: var(--s-3) var(--s-5); background: var(--surface);
+  border-top: 1px solid var(--border-subtle);
+  display: flex; align-items: center; gap: 12px; z-index: 5;
+}
+#detail-footer #save-status { font-size: 0.8rem; min-height: 1em; flex: 1; }
+.detail-delete {
+  background: none; border: none; color: var(--danger); font-size: 0.78rem;
+  cursor: pointer; padding: 4px 6px; border-radius: var(--r-sm); font-family: inherit;
+}
+.detail-delete:hover { background: var(--danger-bg); }
 #detail-pane h2 { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); }
 
 #detail-content {
@@ -724,6 +752,17 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 }
 #auth-area { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; font-weight: 400; }
 #auth-area .btn { padding: 6px 12px; }
+/* Compact circular header buttons (Help, appearance) for signed-out visitors */
+.icon-btn { border-radius: 50%; width: 32px; height: 32px; padding: 0 !important; font-size: 0.95rem; line-height: 1; }
+
+/* iOS "Add to Home Screen" hint (PWA builds only) */
+#ios-hint {
+  position: fixed; left: 12px; right: 12px; bottom: 12px; z-index: 90;
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  background: var(--elevated); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 10px 14px; font-size: 0.84rem; box-shadow: var(--shadow-pop);
+}
+#ios-hint button { background: none; border: none; color: var(--text-tertiary); font-size: 1.2rem; cursor: pointer; padding: 0 4px; }
 .avatar { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; }
 .auth-name { color: var(--text-secondary); max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .google-btn { background: var(--glass); color: var(--text); border: 1px solid var(--glass-border); font-weight: 500; }
@@ -1183,6 +1222,8 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
     flex-wrap: wrap; justify-content: center; font-size: 0.72rem;
   }
   .net-ghost-btn { padding: 5px 9px; font-size: 0.7rem; }
+  /* Power tools readers rarely need on a phone — keep the control row to one line. */
+  #net-relayout, #net-clear-history { display: none; }
   #net-hint { display: none; }     /* gesture hint eats space; touch users discover tap/pinch */
 
   /* Modals fill the small screen and scroll if tall. */
