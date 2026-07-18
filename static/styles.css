@@ -358,6 +358,33 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .analysis-list { margin: 2px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
 .analysis-list li { font-size: 0.9rem; line-height: 1.55; color: var(--text); }
 .analysis-hint { font-size: 0.85rem; color: var(--text-tertiary); line-height: 1.5; }
+/* ── Tip journal (Explore pane): private log + saved AI coaching ── */
+#journal-section { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
+#journal-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }
+.journal-entry {
+  background: var(--surface-2); border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md); padding: 9px 11px;
+}
+.journal-entry.ai { background: var(--accent-wash); border-color: var(--tier-primary-bd); }
+.journal-entry-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.journal-entry-meta { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 600; }
+.journal-entry.ai .journal-entry-meta { color: var(--accent-tint-fg); }
+.journal-del {
+  background: none; border: none; cursor: pointer; color: var(--text-tertiary);
+  font-size: 1rem; line-height: 1; padding: 0 2px; border-radius: var(--r-sm);
+}
+.journal-del:hover { color: var(--danger); }
+.journal-entry-text { font-size: 0.86rem; line-height: 1.55; color: var(--text); margin-top: 4px; }
+.journal-empty { font-size: 0.82rem; color: var(--text-tertiary); font-style: italic; }
+#journal-input {
+  min-height: 64px; resize: vertical; font-family: inherit; font-size: 0.88rem; line-height: 1.5;
+  background: var(--input-bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
+#journal-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+#journal-actions { display: flex; gap: 8px; }
+#journal-status { min-height: 1em; }
+
 /* Admin-written angle: a small gold dot on the option, and prose (not bullets) in the result. */
 .analysis-opt.has-custom::after { content: "•"; color: var(--gold); margin-left: 6px; font-weight: 700; }
 .analysis-custom { font-size: 0.9rem; line-height: 1.6; color: var(--text); white-space: pre-wrap; }

@@ -131,6 +131,39 @@ def reflect_on_favorites(tips, library_size=None):
     }
 
 
+def journal_feedback(tip_text, entries):
+    """Coach a user on applying one tip, based on their whole journal for it.
+
+    `tip_text` is the tip (content + anecdote if present); `entries` is a list of
+    {"date", "content"} — the user's own journal entries for this tip, oldest first.
+    Returns {"feedback": str}. Raises LLMError on failure.
+
+    The value is in reading the entries AS A SEQUENCE: what's working, what obstacle keeps
+    recurring, where the tip is being misapplied — then a few specific next moves.
+    """
+    log = "\n".join("- [%s] %s" % (e.get("date", "?"), e["content"]) for e in entries)
+    prompt = (
+        "You are a direct, practical coach. A person is trying to live by this piece of wisdom:\n\n"
+        '"%s"\n\n'
+        "Below is their journal — dated notes on their real attempts to apply it, oldest first. "
+        "Read the entries as a sequence and coach them on applying the tip more effectively.\n\n"
+        "Do NOT flatter or restate their entries back at them. Be specific to what they actually "
+        "wrote. Cover, in plain flowing prose (2-3 short paragraphs, no headings, no markdown):\n"
+        "1) what is genuinely working, in one or two sentences;\n"
+        "2) the recurring obstacle or misapplication you can see across the entries, named "
+        "precisely — if the entries contradict each other or show a pattern they haven't noticed, "
+        "say so;\n"
+        "3) two to four concrete, testable suggestions for their next attempts, each tied to "
+        "something they actually wrote.\n\n"
+        'Return a JSON object: {"feedback": "<the coaching text>"}\n\n'
+        "Journal:\n%s"
+    ) % (tip_text.strip(), log)
+    parsed = _complete_json(prompt, temperature=0.6)
+    if not isinstance(parsed, dict) or not (parsed.get("feedback") or "").strip():
+        raise LLMError("unexpected response shape")
+    return {"feedback": parsed["feedback"].strip()}
+
+
 def advise(situation, tips):
     """Generate advice for a user's situation, grounded ONLY in the supplied tips (RAG).
 
