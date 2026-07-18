@@ -25,6 +25,10 @@ The app runs as-is on Railway; these are the account/credential steps only you c
 | `COOKIE_SECURE` | `1` |
 | `GROQ_API_KEY` | *(optional)* enables AI advice/tag suggestions |
 | `EMBEDDINGS_API_KEY` | **required for semantic features on Railway** — see below |
+| `VAPID_PRIVATE_KEY` | web-push signing key (PEM, newlines as `\n`) — from your local `.env` |
+| `VAPID_PUBLIC_KEY` | web-push public key — from your local `.env` |
+| `VAPID_SUB` | `mailto:` contact for push, e.g. `mailto:you@example.com` |
+| `PUSH_HOUR` | *(optional)* hour (server time, 0-23) for the daily tip; default 8 |
 | `EMBEDDINGS_API_URL` | your provider's `/v1/embeddings` endpoint |
 | `EMBEDDINGS_API_MODEL` | your provider's embedding model name |
 
@@ -57,3 +61,11 @@ small you can also remove `fastembed` from `requirements.txt` (the API backend d
   on small instances. Set the API key (above) to run semantic features with almost no memory.
 - **PWA updates:** bump `CACHE` in `static/sw.js` whenever you ship new shell assets, or returning
   installed users keep the cached old version.
+
+## Daily tip notifications & nightly backups
+- The web process runs an internal scheduler: daily tip push at `PUSH_HOUR` and a
+  nightly `.xlsx` backup at 03:00 to `/data/backups` (last 14 kept — on the volume,
+  so download one occasionally for true offsite safety).
+- Copy the three `VAPID_*` values from your local `.env` into Railway's variables,
+  then users turn on "🔔 Daily tip" in their account menu (installed app).
+- Note: Railway's clock is UTC — set `PUSH_HOUR` accordingly (e.g. 0 = 8am AWST).

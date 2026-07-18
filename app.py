@@ -801,12 +801,9 @@ LENS_COLUMNS = [
 ]
 
 
-@app.get("/api/tips/export")
-@admin_required
-def export_tips():
-    """Stream every tip and its authored content as an .xlsx for offline backup."""
+def build_export_workbook():
+    """The full-library .xlsx (also used by the nightly on-disk backup)."""
     from openpyxl import Workbook
-    from io import BytesIO
 
     wb = Workbook()
     ws = wb.active
@@ -838,9 +835,17 @@ def export_tips():
     for i, w in enumerate(widths, start=1):
         ws.column_dimensions[ws.cell(row=1, column=i).column_letter].width = w
     ws.freeze_panes = "A2"
+    return wb
+
+
+@app.get("/api/tips/export")
+@admin_required
+def export_tips():
+    """Stream every tip and its authored content as an .xlsx for offline backup."""
+    from io import BytesIO
 
     buf = BytesIO()
-    wb.save(buf)
+    build_export_workbook().save(buf)
     buf.seek(0)
     fname = "practical-wisdom-tips-%s.xlsx" % time.strftime("%Y%m%d")
     return send_file(
@@ -1284,6 +1289,317 @@ def journal_feedback(tip_id):
     return jsonify(_journal_entry_json(row)), 201
 
 
+# ── Usage analytics: tiny anonymous-friendly event counts (what's used, not who) ──
+EVENT_NAMES = {"view_tip", "view_list", "view_network", "view_cards", "view_favorites",
+               "search_keyword", "search_meaning", "advise", "share_tip", "path_started"}
+
+
+@app.post("/api/events")
+def record_event():
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    if name not in EVENT_NAMES:
+        return jsonify({"error": "unknown event"}), 400
+    tip_id = data.get("tip_id")
+    with get_db() as conn:
+        conn.execute("INSERT INTO events (name, tip_id, user_id) VALUES (?, ?, ?)",
+                     (name, tip_id if isinstance(tip_id, int) else None, current_user_id()))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/stats")
+@admin_required
+def usage_stats():
+    """Last-30-days usage: events by name, and the ten most-viewed tips."""
+    with get_db() as conn:
+        by_name = [dict(r) for r in conn.execute(
+            "SELECT name, COUNT(*) AS n FROM events "
+            "WHERE created_at >= datetime('now', '-30 days') GROUP BY name ORDER BY n DESC")]
+        top_tips = [dict(r) for r in conn.execute(
+            "SELECT e.tip_id, COUNT(*) AS views, t.content FROM events e JOIN tips t ON t.id = e.tip_id "
+            "WHERE e.name = 'view_tip' AND e.created_at >= datetime('now', '-30 days') "
+            "GROUP BY e.tip_id ORDER BY views DESC LIMIT 10")]
+    return jsonify({"days": 30, "by_name": by_name, "top_tips": top_tips})
+
+
+# ── Practice this week: one pinned tip per user, journalled against ──
+@app.get("/api/practice")
+def get_practice():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"practice": None})
+    with get_db() as conn:
+        row = conn.execute("SELECT tip_id, started_at FROM practice WHERE user_id = ?", (uid,)).fetchone()
+        if not row:
+            return jsonify({"practice": None})
+        tip = tip_with_tags(conn, row["tip_id"])
+        entries = conn.execute(
+            "SELECT COUNT(*) AS n FROM journal_entries WHERE user_id = ? AND tip_id = ? "
+            "AND kind = 'entry' AND created_at >= ?", (uid, row["tip_id"], row["started_at"])).fetchone()["n"]
+        days = conn.execute("SELECT CAST(julianday('now') - julianday(?) AS INTEGER) AS d",
+                            (row["started_at"],)).fetchone()["d"]
+        last = conn.execute(
+            "SELECT MAX(created_at) AS t FROM journal_entries WHERE user_id = ? AND tip_id = ? AND kind = 'entry'",
+            (uid, row["tip_id"])).fetchone()["t"]
+    return jsonify({"practice": {"tip": tip, "started_at": row["started_at"], "days": days,
+                                 "entries": entries, "last_entry_at": last}})
+
+
+@app.post("/api/practice")
+def set_practice():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in to pick a practice."}), 401
+    tip_id = (request.get_json(force=True) or {}).get("tip_id")
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM tips WHERE id = ?", (tip_id,)).fetchone():
+            return jsonify({"error": "tip not found"}), 404
+        conn.execute("INSERT INTO practice (user_id, tip_id, started_at) VALUES (?, ?, CURRENT_TIMESTAMP) "
+                     "ON CONFLICT(user_id) DO UPDATE SET tip_id = excluded.tip_id, started_at = CURRENT_TIMESTAMP",
+                     (uid, tip_id))
+        conn.commit()
+    return get_practice()
+
+
+@app.delete("/api/practice")
+def end_practice():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in first."}), 401
+    with get_db() as conn:
+        conn.execute("DELETE FROM practice WHERE user_id = ?", (uid,))
+        conn.commit()
+    return jsonify({"practice": None})
+
+
+# ── Resurfacing: the favourite that's waited longest since its last journal entry ──
+@app.get("/api/journal/revisit")
+def journal_revisit():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"revisit": None})
+    with get_db() as conn:
+        row = conn.execute(
+            """SELECT v.tip_id,
+                      CAST(julianday('now') - julianday(COALESCE(MAX(j.created_at), '2000-01-01')) AS INTEGER) AS days
+               FROM votes v LEFT JOIN journal_entries j
+                 ON j.tip_id = v.tip_id AND j.user_id = v.user_id AND j.kind = 'entry'
+               WHERE v.user_id = ? AND v.value = 1
+               GROUP BY v.tip_id
+               HAVING MAX(j.created_at) IS NOT NULL AND days >= 14
+               ORDER BY days DESC LIMIT 1""", (uid,)).fetchone()
+        if not row:
+            return jsonify({"revisit": None})
+        return jsonify({"revisit": {"tip": tip_with_tags(conn, row["tip_id"]), "days": row["days"]}})
+
+
+# ── Weekly review: the AI reads the week's journal entries across every tip ──
+@app.post("/api/journal/weekly-review")
+def weekly_review():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in first."}), 401
+    if not llm.is_enabled():
+        return jsonify({"error": "AI review isn't configured (set GROQ_API_KEY)."}), 503
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT t.content AS tip, j.content AS entry, j.created_at
+               FROM journal_entries j JOIN tips t ON t.id = j.tip_id
+               WHERE j.user_id = ? AND j.kind = 'entry' AND j.created_at >= datetime('now', '-7 days')
+               ORDER BY j.created_at""", (uid,)).fetchall()
+    if not rows:
+        return jsonify({"error": "No journal entries in the last 7 days — write some first."}), 400
+    try:
+        result = llm.weekly_review(
+            [{"tip": r["tip"], "entry": r["entry"], "date": (r["created_at"] or "")[:10]} for r in rows])
+    except llm.LLMError as e:
+        return jsonify({"error": "Review failed: %s" % e}), 502
+    return jsonify(result)
+
+
+# ── Curated paths: admin-authored tip sequences readers can follow in Cards view ──
+@app.get("/api/paths")
+def list_paths():
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT p.id, p.title, p.description, COUNT(pt.tip_id) AS tips FROM paths p "
+            "LEFT JOIN path_tips pt ON pt.path_id = p.id GROUP BY p.id ORDER BY p.position, p.id").fetchall()
+    return jsonify({"paths": [dict(r) for r in rows]})
+
+
+@app.get("/api/paths/<int:path_id>")
+def get_path(path_id):
+    with get_db() as conn:
+        p = conn.execute("SELECT id, title, description FROM paths WHERE id = ?", (path_id,)).fetchone()
+        if not p:
+            return jsonify({"error": "path not found"}), 404
+        ids = [r["tip_id"] for r in conn.execute(
+            "SELECT tip_id FROM path_tips WHERE path_id = ? ORDER BY position", (path_id,))]
+    return jsonify({"id": p["id"], "title": p["title"], "description": p["description"], "tip_ids": ids})
+
+
+@app.post("/api/paths")
+@admin_required
+def create_path():
+    data = request.get_json(force=True) or {}
+    title = (data.get("title") or "").strip()
+    tip_ids = [t for t in (data.get("tip_ids") or []) if isinstance(t, int)]
+    if not title or not tip_ids:
+        return jsonify({"error": "A path needs a title and at least one tip."}), 400
+    with get_db() as conn:
+        cur = conn.execute("INSERT INTO paths (title, description) VALUES (?, ?)",
+                           (title, (data.get("description") or "").strip()))
+        pid = cur.lastrowid
+        for i, tid in enumerate(tip_ids):
+            conn.execute("INSERT OR IGNORE INTO path_tips (path_id, tip_id, position) VALUES (?, ?, ?)",
+                         (pid, tid, i))
+        conn.commit()
+    return get_path(pid)
+
+
+@app.delete("/api/paths/<int:path_id>")
+@admin_required
+def delete_path(path_id):
+    with get_db() as conn:
+        conn.execute("DELETE FROM paths WHERE id = ?", (path_id,))
+        conn.commit()
+    return jsonify({"deleted": path_id})
+
+
+# ── Public share page: a clean, OG-tagged page per tip that links into the app ──
+@app.get("/tip/<int:tip_id>")
+def share_tip(tip_id):
+    with get_db() as conn:
+        tip = conn.execute("SELECT content, anecdote FROM tips WHERE id = ?", (tip_id,)).fetchone()
+    if not tip:
+        return "Tip not found.", 404
+    content = tip["content"]
+    return render_template("share.html", tip_id=tip_id, content=content,
+                           anecdote=tip["anecdote"] or "")
+
+
+# ── Web push: daily-tip notifications ──
+VAPID_PRIVATE_KEY = (os.environ.get("VAPID_PRIVATE_KEY") or "").replace("\\n", "\n")
+VAPID_PUBLIC_KEY = os.environ.get("VAPID_PUBLIC_KEY", "")
+VAPID_SUB = os.environ.get("VAPID_SUB", "mailto:admin@example.com")
+PUSH_ENABLED = bool(VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY)
+
+
+@app.get("/api/push/key")
+def push_key():
+    return jsonify({"enabled": PUSH_ENABLED, "key": VAPID_PUBLIC_KEY})
+
+
+@app.post("/api/push/subscribe")
+def push_subscribe():
+    uid = current_user_id()
+    if not uid:
+        return jsonify({"error": "Sign in to get the daily tip."}), 401
+    sub = (request.get_json(force=True) or {}).get("subscription") or {}
+    keys = sub.get("keys") or {}
+    if not sub.get("endpoint") or not keys.get("p256dh") or not keys.get("auth"):
+        return jsonify({"error": "Malformed subscription."}), 400
+    with get_db() as conn:
+        conn.execute(
+            "INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, "
+            "p256dh = excluded.p256dh, auth = excluded.auth",
+            (uid, sub["endpoint"], keys["p256dh"], keys["auth"]))
+        conn.commit()
+    return jsonify({"subscribed": True})
+
+
+@app.delete("/api/push/subscribe")
+def push_unsubscribe():
+    endpoint = (request.get_json(force=True) or {}).get("endpoint") or ""
+    with get_db() as conn:
+        conn.execute("DELETE FROM push_subscriptions WHERE endpoint = ?", (endpoint,))
+        conn.commit()
+    return jsonify({"subscribed": False})
+
+
+def send_daily_tip():
+    """Push one tip to every subscription. Dead subscriptions are pruned."""
+    if not PUSH_ENABLED:
+        return 0
+    from pywebpush import webpush, WebPushException
+    with get_db() as conn:
+        tip = conn.execute("SELECT id, content FROM tips ORDER BY RANDOM() LIMIT 1").fetchone()
+        subs = conn.execute("SELECT id, endpoint, p256dh, auth FROM push_subscriptions").fetchall()
+    if not tip or not subs:
+        return 0
+    import json as _json
+    payload = _json.dumps({"title": "Today's practical wisdom",
+                           "body": tip["content"], "tip_id": tip["id"]})
+    sent, dead = 0, []
+    for s in subs:
+        try:
+            webpush(
+                subscription_info={"endpoint": s["endpoint"],
+                                   "keys": {"p256dh": s["p256dh"], "auth": s["auth"]}},
+                data=payload, vapid_private_key=VAPID_PRIVATE_KEY,
+                vapid_claims={"sub": VAPID_SUB})
+            sent += 1
+        except WebPushException as e:
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            if status in (404, 410):
+                dead.append(s["id"])   # browser dropped the subscription
+            else:
+                app.logger.warning("push failed: %s", e)
+    if dead:
+        with get_db() as conn:
+            conn.executemany("DELETE FROM push_subscriptions WHERE id = ?", [(i,) for i in dead])
+            conn.commit()
+    app.logger.info("daily tip pushed to %d subscription(s)", sent)
+    return sent
+
+
+def write_backup():
+    """Nightly on-disk .xlsx snapshot next to the database; keeps the last 14."""
+    backups = os.path.join(os.path.dirname(DB) or ".", "backups")
+    os.makedirs(backups, exist_ok=True)
+    path = os.path.join(backups, "tips-%s.xlsx" % time.strftime("%Y%m%d"))
+    build_export_workbook().save(path)
+    old = sorted(f for f in os.listdir(backups) if f.startswith("tips-") and f.endswith(".xlsx"))
+    for f in old[:-14]:
+        os.remove(os.path.join(backups, f))
+    app.logger.info("backup written: %s", path)
+    return path
+
+
+def _scheduler_loop():
+    """Once-a-minute tick that fires the daily jobs at their hour (server-local time).
+
+    PUSH_HOUR (default 8) sends the daily tip; the backup runs at 03:00. Runs in a
+    daemon thread inside the web process — no external cron needed."""
+    push_hour = int(os.environ.get("PUSH_HOUR", "8"))
+    done = set()   # {(job, yyyymmdd)} so each job fires once per day
+    while True:
+        now = time.localtime()
+        today = time.strftime("%Y%m%d", now)
+        try:
+            if now.tm_hour == push_hour and ("push", today) not in done:
+                done.add(("push", today))
+                send_daily_tip()
+            if now.tm_hour == 3 and ("backup", today) not in done:
+                done.add(("backup", today))
+                write_backup()
+        except Exception as e:   # never let a job kill the scheduler
+            app.logger.warning("scheduled job failed: %s", e)
+        if len(done) > 8:
+            done = {d for d in done if d[1] == today}
+        time.sleep(60)
+
+
+def start_scheduler():
+    if os.environ.get("RUN_SCHEDULER", "1") != "1" or os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    import threading
+    t = threading.Thread(target=_scheduler_loop, daemon=True, name="pw-scheduler")
+    t.start()
+
+
 @app.post("/api/favorites/insights")
 def favorites_insights():
     """Reflect on the signed-in user's favourite tips: themes, what resonates, next steps.
@@ -1476,6 +1792,7 @@ def reset_seen():
 # so this runs once in the master before workers fork. Idempotent (IF NOT EXISTS +
 # schema_migrations), so re-running against an existing database is a safe no-op.
 init_db()
+start_scheduler()   # daily tip push + nightly backup (no-op under pytest / RUN_SCHEDULER=0)
 
 if __name__ == "__main__":
     app.run(debug=True, port=int(os.environ.get("PORT", "5001")))

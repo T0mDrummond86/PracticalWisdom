@@ -389,6 +389,43 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 }
 .net-refine-toggle:hover { color: #e6edf5; }
 
+/* ── Growth: favourites banners, paths, share/practice tools, stats ── */
+#tip-tools { display: flex; gap: 8px; }
+#fav-banners { display: flex; flex-direction: column; gap: 10px; margin-bottom: 6px; }
+.fav-banner {
+  display: flex; align-items: center; gap: 12px; justify-content: space-between;
+  background: var(--surface-2); border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--gold); border-radius: var(--r-md); padding: 12px 14px;
+}
+.fav-banner.revisit { border-left-color: var(--accent-soft); }
+.fav-banner.week { border-left-color: var(--info-fg); }
+.fav-banner-text { font-size: 0.88rem; line-height: 1.5; }
+.fav-banner-sub { display: block; font-size: 0.76rem; color: var(--text-tertiary); margin-top: 2px; }
+.fav-banner-actions { display: flex; gap: 8px; flex: none; }
+#cv-paths { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 6px; }
+.cv-redirect-chip, .path-chip {
+  background: var(--glass); border: 1px solid var(--glass-border); color: var(--text);
+  border-radius: var(--r-pill); padding: 6px 14px; font-size: 0.82rem; cursor: pointer;
+  font-family: inherit;
+}
+.cv-redirect-chip:hover, .path-chip:hover { background: var(--glass-hover); }
+/* paths admin modal */
+#paths-existing { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.path-row { font-size: 0.86rem; display: flex; align-items: center; gap: 8px; }
+.path-del { background: none; border: none; color: var(--danger); cursor: pointer; font-size: 1rem; }
+#path-controls { display: flex; gap: 8px; margin-bottom: 8px; }
+#path-controls input { flex: 1; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; font-family: inherit; }
+#path-filter { width: 100%; background: var(--input-bg); color: var(--text); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 8px 10px; font-family: inherit; margin-bottom: 8px; }
+#path-picked { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+#path-tip-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.path-pick { font-size: 0.84rem; padding: 7px 10px; border-radius: var(--r-sm); cursor: pointer; background: var(--surface-2); border: 1px solid var(--border-subtle); }
+.path-pick:hover { border-color: var(--accent-soft); }
+.path-pick.picked { opacity: 0.45; }
+/* stats */
+.stats-table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.stats-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); }
+.stats-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+
 /* ── Tip journal (Explore pane): private log + saved AI coaching ── */
 #journal-section { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
 #journal-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }

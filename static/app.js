@@ -137,6 +137,7 @@
               ? `<button class="account-item account-item-admin" id="admin-logout-btn" role="menuitem"><span class="admin-badge">ADMIN</span> Exit admin mode</button>`
               : `<button class="account-item" id="admin-open-btn" role="menuitem">⚙ Admin sign-in…</button>`) +
             `<div class="account-menu-sep"></div>` +
+            `<button class="account-item" id="push-toggle-btn" role="menuitem" style="display:none">🔔 Daily tip</button>` +
             `<div class="account-menu-label">Appearance</div>` +
             `<div class="theme-seg" role="group" aria-label="Appearance">` +
               themeOpt("light", "Light") + themeOpt("medium", "Medium") + themeOpt("dark", "Dark") +
@@ -181,6 +182,9 @@
       $("logout-btn").onclick = googleSignOut;
       $("suggest-tip-btn").onclick = () => { closeAccountMenu(); openSuggest(); };
       $("help-btn").onclick = () => { closeAccountMenu(); openHelp(); };
+      const pushBtn = $("push-toggle-btn");
+      pushBtn.onclick = () => togglePush(pushBtn);
+      updatePushLabel(pushBtn);   // shown only when push is supported + configured
       // Admin sign-in / exit are now items inside the account dropdown.
       if (isAdmin) $("admin-logout-btn").onclick = () => { closeAccountMenu(); adminSignOut(); };
       else $("admin-open-btn").onclick = () => { closeAccountMenu(); openAdminModal(); };
@@ -691,6 +695,7 @@
     const q = $("search-input").value.trim();
     if (!q) { $("search-input").focus(); return; }
     searchActive = true;
+    track("search_keyword");
     showOnlySearchPanel();
     const panel = $("search-results");
     panel.innerHTML = `<div class="fav-list-head">Searching for “${escHtml(q)}”…</div>${SPINNER}`;
@@ -707,6 +712,7 @@
     if (!q) { $("search-input").focus(); return; }
     if (!embeddingsEnabled) { toast("Semantic search isn't configured (no AI key)."); return; }
     searchActive = true;
+    track("search_meaning");
     showOnlySearchPanel();
     const panel = $("search-results");
     panel.innerHTML = `<div class="fav-list-head">✨ Searching for “${escHtml(q)}”…</div>${SPINNER}`;
@@ -2205,6 +2211,7 @@
   async function enterCardView() {
     cardBackStack = [];
     toggleRedirect(false);
+    loadPathChips();   // curated paths appear inside the Change-course panel
     $("cv-content").innerHTML = SPINNER;
     $("cv-anecdote").textContent = ""; $("cv-tags").innerHTML = ""; $("cv-actions").innerHTML = "";
     const ok = await loadTipData();
@@ -2434,6 +2441,7 @@
 
   function setView(v) {
     currentView = v;
+    track("view_" + v);   // anonymous usage count: which views actually get used
     $("view-list").classList.toggle("active", v === "list");
     $("view-network").classList.toggle("active", v === "network");
     $("view-cards").classList.toggle("active", v === "cards");
@@ -2485,6 +2493,7 @@
       (canReflect ? `<button class="btn secondary" id="fav-reflect-btn" title="Use AI to reflect on what your saved tips say about you">✨ Reflect on these</button>` : "") +
       `</div>`;
     if (canReflect) $("fav-reflect-btn").onclick = openFavInsights;
+    renderFavBanners(list);   // practice-this-week + revisit + weekly review, above the cards
     if (!tips.length) {
       list.insertAdjacentHTML("beforeend",
         `<div id="empty-state">No favorites yet — tap the heart (♡) on a tip to save it.</div>`);
@@ -2541,6 +2550,8 @@
     $("analysis-pane").classList.remove("hidden");
     document.querySelectorAll("#fav-list .tip-card, #search-results .tip-card").forEach(c =>
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id));
+    $("practice-tip-btn").style.display = currentUser ? "" : "none";
+    track("view_tip", tip.id);
     loadJournal(tip);   // the signed-in user's private journal for this tip
   }
 
@@ -2616,6 +2627,12 @@
     if (!currentUser) { section.style.display = "none"; return; }
     section.style.display = "";
     $("journal-input").value = "";
+    // Seed the prompt from the admin's own "how to apply it" text when there is one —
+    // curation flows straight into practice.
+    const apply = (tip.analysis || {}).apply;
+    $("journal-input").placeholder = apply
+      ? "Try: " + apply.slice(0, 90) + (apply.length > 90 ? "…" : "")
+      : "How did applying this tip go?";
     $("journal-status").textContent = "";
     $("journal-list").innerHTML = SPINNER;
     const res = await api("GET", `/api/tips/${tip.id}/journal`);
@@ -2657,6 +2674,7 @@
   }
 
   async function runAdvise() {
+    track("advise");
     const situation = $("advise-input").value.trim();
     if (!situation) { $("advise-input").focus(); return; }
     const btn = $("advise-btn"), out = $("advise-result");
@@ -2944,10 +2962,17 @@
   $("view-network").onclick = () => setView("network");
   $("view-cards").onclick = () => setView("cards");
   $("view-advise").onclick = () => setView("advise");
-  $("cv-next").onclick = cardNext;
+  // While a curated path is active, Next follows its order; otherwise the recommender.
+  $("cv-next").onclick = () => {
+    if (cardPath) {
+      const nid = pathNextTip();
+      if (nid != null) { cardBackStack.push(cardCurrent); showCardTip(nid); return; }
+    }
+    cardNext();
+  };
   $("cv-prev").onclick = cardPrev;
-  $("cv-restart").onclick = cardRestart;
-  $("cv-change-course").onclick = () => toggleRedirect();
+  $("cv-restart").onclick = () => { cardPath = null; cardRestart(); };
+  $("cv-change-course").onclick = () => { cardPath = null; toggleRedirect(); };
   $("cv-redirect-go").onclick = () => jumpToDescription($("cv-redirect-input").value);
   $("cv-redirect-input").onkeydown = e => { if (e.key === "Enter") jumpToDescription($("cv-redirect-input").value); };
   initCardSwipe();
@@ -3053,12 +3078,262 @@
     if (aw && !aw.contains(e.target)) closeAccountMenu();
   });
 
+  // ── Admin: curated-path authoring ──
+  let pathPick = [];   // ordered tip ids being assembled
+  let pathTipsCache = [];
+  async function openPathsModal() {
+    pathPick = [];
+    $("path-title").value = ""; $("path-desc").value = ""; $("path-filter").value = "";
+    $("paths-status").textContent = "";
+    $("paths-overlay").classList.remove("hidden");
+    renderExistingPaths();
+    pathTipsCache = await api("GET", "/api/tips");
+    if (!Array.isArray(pathTipsCache)) pathTipsCache = [];
+    renderPathPicker();
+  }
+  async function renderExistingPaths() {
+    const res = await api("GET", "/api/paths");
+    const box = $("paths-existing");
+    box.innerHTML = (res.paths || []).map(p =>
+      `<div class="path-row" data-id="${p.id}"><b>${escHtml(p.title)}</b> · ${p.tips} tips
+       <button class="path-del" title="Delete this path">×</button></div>`).join("") || "";
+    box.querySelectorAll(".path-del").forEach(btn => btn.onclick = async () => {
+      const row = btn.closest(".path-row");
+      if (!confirm("Delete this path? (Tips themselves are kept.)")) return;
+      await api("DELETE", "/api/paths/" + row.dataset.id);
+      renderExistingPaths();
+    });
+  }
+  function renderPathPicker() {
+    const q = $("path-filter").value.trim().toLowerCase();
+    $("path-picked").innerHTML = pathPick.map((id, i) => {
+      const t = pathTipsCache.find(x => x.id === id);
+      return `<button class="path-chip" data-id="${id}" title="Remove">${i + 1}. ${escHtml((t ? t.content : "?").slice(0, 40))}</button>`;
+    }).join("") || `<span class="journal-empty">No tips picked yet.</span>`;
+    $("path-picked").querySelectorAll(".path-chip").forEach(b => b.onclick = () => {
+      pathPick = pathPick.filter(id => id !== Number(b.dataset.id)); renderPathPicker();
+    });
+    const list = $("path-tip-list");
+    list.innerHTML = "";
+    pathTipsCache
+      .filter(t => !q || t.content.toLowerCase().includes(q))
+      .slice(0, 60)
+      .forEach(t => {
+        const d = document.createElement("div");
+        d.className = "path-pick" + (pathPick.includes(t.id) ? " picked" : "");
+        d.textContent = t.content;
+        d.onclick = () => {
+          if (!pathPick.includes(t.id)) { pathPick.push(t.id); renderPathPicker(); }
+        };
+        list.appendChild(d);
+      });
+  }
+  $("manage-paths-btn").onclick = openPathsModal;
+  $("paths-close").onclick = () => $("paths-overlay").classList.add("hidden");
+  $("path-filter").oninput = renderPathPicker;
+  $("path-save").onclick = async () => {
+    const r = await api("POST", "/api/paths", {
+      title: $("path-title").value.trim(),
+      description: $("path-desc").value.trim(),
+      tip_ids: pathPick,
+    });
+    const s = $("paths-status");
+    if (r.error) { s.style.color = "var(--danger)"; s.textContent = r.error; return; }
+    s.style.color = "var(--accent)"; s.textContent = `Created “${r.title}” with ${r.tip_ids.length} tips.`;
+    pathPick = []; $("path-title").value = ""; $("path-desc").value = "";
+    renderExistingPaths(); renderPathPicker();
+  };
+  dismissOnBackdrop("paths-overlay");
+
+  // ── Admin: usage stats ──
+  $("usage-stats-btn").onclick = async () => {
+    $("stats-body").innerHTML = SPINNER;
+    $("stats-overlay").classList.remove("hidden");
+    const s = await api("GET", "/api/stats");
+    if (s.error) { $("stats-body").innerHTML = ERR(s.error); return; }
+    const rows = (s.by_name || []).map(r => `<tr><td>${escHtml(r.name)}</td><td class="num">${r.n}</td></tr>`).join("");
+    const tips = (s.top_tips || []).map(r =>
+      `<tr><td>${escHtml(r.content.slice(0, 60))}${r.content.length > 60 ? "…" : ""}</td><td class="num">${r.views}</td></tr>`).join("");
+    $("stats-body").innerHTML =
+      `<div class="analysis-label">Events (30 days)</div>
+       <table class="stats-table">${rows || "<tr><td>No events yet.</td></tr>"}</table>
+       <div class="analysis-label" style="margin-top:14px">Most-viewed tips</div>
+       <table class="stats-table">${tips || "<tr><td>No tip views yet.</td></tr>"}</table>`;
+  };
+  $("stats-close").onclick = () => $("stats-overlay").classList.add("hidden");
+  dismissOnBackdrop("stats-overlay");
+
+  // ════════════════ Growth & ritual features ═══════════════════
+
+  // Fire-and-forget usage event (counts only — no personal data beyond the session user).
+  function track(name, tipId) {
+    try { api("POST", "/api/events", tipId ? { name, tip_id: tipId } : { name }); } catch (e) {}
+  }
+
+  // ── Practice this week + revisit + weekly review, shown at the top of Favorites ──
+  async function renderFavBanners(list) {
+    if (!currentUser) return;
+    const wrap = document.createElement("div");
+    wrap.id = "fav-banners";
+    list.insertBefore(wrap, list.children[1] || null);
+    const [p, r] = await Promise.all([api("GET", "/api/practice"), api("GET", "/api/journal/revisit")]);
+    const parts = [];
+    if (p && p.practice) {
+      const pr = p.practice;
+      parts.push(`<div class="fav-banner practice">
+        <div class="fav-banner-text"><b>⭑ This week's practice</b> — ${escHtml(pr.tip.content)}
+          <span class="fav-banner-sub">day ${pr.days + 1} · ${pr.entries} journal entr${pr.entries === 1 ? "y" : "ies"}</span></div>
+        <div class="fav-banner-actions">
+          <button class="btn" id="practice-journal-btn">Journal it</button>
+          <button class="btn secondary" id="practice-end-btn" title="End this practice">End</button>
+        </div></div>`);
+    }
+    if (r && r.revisit) {
+      parts.push(`<div class="fav-banner revisit">
+        <div class="fav-banner-text"><b>↻ Worth revisiting</b> — it's been ${r.revisit.days} days since you
+          journalled on “${escHtml(r.revisit.tip.content.slice(0, 70))}${r.revisit.tip.content.length > 70 ? "…" : ""}”</div>
+        <div class="fav-banner-actions"><button class="btn secondary" id="revisit-open-btn">Open it</button></div>
+      </div>`);
+    }
+    if (llmEnabled) {
+      parts.push(`<div class="fav-banner week">
+        <div class="fav-banner-text"><b>✨ Weekly review</b> — let the AI read this week's journal entries and reflect back the thread.</div>
+        <div class="fav-banner-actions"><button class="btn secondary" id="week-review-btn">Review my week</button></div>
+      </div>`);
+    }
+    wrap.innerHTML = parts.join("");
+    if (p && p.practice) {
+      $("practice-journal-btn").onclick = () => openFavAnalysis(p.practice.tip);
+      $("practice-end-btn").onclick = async () => {
+        if (!confirm("End this week's practice?")) return;
+        await api("DELETE", "/api/practice");
+        renderFavList();
+      };
+    }
+    if (r && r.revisit) $("revisit-open-btn").onclick = () => openFavAnalysis(r.revisit.tip);
+    if (llmEnabled) $("week-review-btn").onclick = runWeeklyReview;
+  }
+
+  async function runWeeklyReview() {
+    $("week-body").innerHTML = `<div class="advise-thinking">${SPINNER}<span>Reading your week…</span></div>`;
+    $("week-overlay").classList.remove("hidden");
+    const r = await api("POST", "/api/journal/weekly-review");
+    $("week-body").innerHTML = r.error
+      ? ERR(r.error)
+      : `<div class="advise-answer">${escHtml(r.review || "").replace(/\n/g, "<br>")}</div>`;
+  }
+  $("week-close").onclick = () => $("week-overlay").classList.add("hidden");
+  dismissOnBackdrop("week-overlay");
+
+  // ── Share + practice buttons in the Explore pane ──
+  $("share-tip-btn").onclick = async () => {
+    if (!selectedFav) return;
+    const url = location.origin + "/tip/" + selectedFav.id;
+    try { await navigator.clipboard.writeText(url); toast("Link copied — anyone can open it."); }
+    catch (e) { prompt("Copy this link:", url); }
+    track("share_tip", selectedFav.id);
+  };
+  $("practice-tip-btn").onclick = async () => {
+    if (!selectedFav) return;
+    const r = await api("POST", "/api/practice", { tip_id: selectedFav.id });
+    if (r.error) { toast(r.error); return; }
+    toast("Set as this week's practice — journal it as you go. ⭑");
+  };
+
+  // ── Curated paths: follow an ordered sequence in Cards view ──
+  let cardPath = null;   // {id, title, tipIds, idx} while following a path
+  async function loadPathChips() {
+    const res = await api("GET", "/api/paths");
+    const paths = (res && res.paths || []).filter(p => p.tips > 0);
+    $("cv-paths-label").style.display = paths.length ? "" : "none";
+    const box = $("cv-paths");
+    box.innerHTML = "";
+    paths.forEach(p => {
+      const b = document.createElement("button");
+      b.className = "cv-redirect-chip";
+      b.textContent = `${p.title} (${p.tips})`;
+      b.title = p.description || `Follow ${p.tips} tips in order`;
+      b.onclick = async () => {
+        const full = await api("GET", "/api/paths/" + p.id);
+        if (full.error || !full.tip_ids.length) { toast("Couldn't open that path."); return; }
+        cardPath = { id: p.id, title: p.title, tipIds: full.tip_ids.filter(id => NET.byId[id]), idx: 0 };
+        if (!cardPath.tipIds.length) { cardPath = null; toast("That path's tips aren't loaded."); return; }
+        toggleRedirect(false);
+        track("path_started", null);
+        toast(`Following “${p.title}” — ${cardPath.tipIds.length} tips in order.`);
+        showCardTip(cardPath.tipIds[0]);
+        $("cv-next").disabled = cardPath.tipIds.length < 2;
+      };
+      box.appendChild(b);
+    });
+  }
+  // Next follows the path while one is active; finishing (or changing course) releases it.
+  function pathNextTip() {
+    if (!cardPath) return null;
+    if (cardPath.idx + 1 >= cardPath.tipIds.length) {
+      toast(`“${cardPath.title}” complete 🎉 — back to free exploring.`);
+      cardPath = null;
+      return null;
+    }
+    cardPath.idx += 1;
+    return cardPath.tipIds[cardPath.idx];
+  }
+
+  // ── Daily tip notifications (web push) ──
+  async function pushState() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return { supported: false };
+    const key = await api("GET", "/api/push/key");
+    if (!key.enabled) return { supported: false };
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg ? await reg.pushManager.getSubscription() : null;
+    return { supported: true, key: key.key, sub };
+  }
+  function b64ToU8(s) {
+    const pad = "=".repeat((4 - s.length % 4) % 4);
+    const raw = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+    return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+  }
+  async function togglePush(btn) {
+    const st = await pushState();
+    if (!st.supported) { toast("Notifications need the installed app (and a push-enabled server)."); return; }
+    if (st.sub) {
+      await api("DELETE", "/api/push/subscribe", { endpoint: st.sub.endpoint });
+      await st.sub.unsubscribe();
+      toast("Daily tip notifications off.");
+    } else {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Notifications were blocked — allow them in your browser settings."); return; }
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(st.key) });
+      const r = await api("POST", "/api/push/subscribe", { subscription: sub.toJSON() });
+      if (r.error) { toast(r.error); return; }
+      toast("Daily tip on — one tip each morning. 🔔");
+    }
+    if (btn) updatePushLabel(btn);
+  }
+  async function updatePushLabel(btn) {
+    const st = await pushState();
+    btn.style.display = st.supported ? "" : "none";
+    if (st.supported) btn.textContent = st.sub ? "🔔 Daily tip: on" : "🔕 Daily tip: off";
+  }
+
+  // ── Deep link: /?tip=<id> (from share pages and notifications) opens that tip ──
+  async function openDeepLink() {
+    const id = Number(new URLSearchParams(location.search).get("tip"));
+    if (!id) return;
+    history.replaceState(null, "", location.pathname);   // tidy the URL
+    const tips = await api("GET", "/api/tips");
+    const tip = Array.isArray(tips) ? tips.find(t => t.id === id) : null;
+    if (tip) openFavAnalysis(tip);
+  }
+
   // Bootstrap: figure out the role first, then show the right view/controls.
   (async () => {
     await loadMe();
     applyRolePermissions();
     maybeShowIntro();     // first visit only: a one-screen "what is this?"
     maybeShowIosHint();   // installed-PWA-capable iOS Safari: how to add to Home Screen
+    openDeepLink();       // /?tip=<id> from share pages & notifications
   })();
 
   // ── PWA: register the service worker (production only) and prompt on updates ──

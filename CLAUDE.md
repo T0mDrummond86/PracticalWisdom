@@ -4,28 +4,23 @@ Flask + raw `sqlite3` app for collecting short tips. Vanilla-JS IIFE front end
 (no build step, no framework). See `README.md` for setup/config and (on the
 `pwa` branch) `DEPLOY.md` for Railway/Google OAuth deploy steps.
 
-## Two branches, maintained in parallel — this is the thing to not forget
+## One branch of development (unified July 2026)
 
-- `main` — the base app.
-- `pwa` — everything `main` has, **plus** installable/offline PWA support
-  (`static/sw.js`, `static/manifest.json`, icons, service-worker registration).
+`main` and `pwa` were unified: both now carry the full app INCLUDING the PWA
+(manifest, service worker, icons). **All work happens on `main`.** `pwa` exists
+only because Railway deploys from it — after pushing main, mirror it:
 
-They diverged early and were built independently, so **the same files
-(`app.py`, `static/app.js`, `static/styles.css`, `templates/index.html`) have
-been edited on both sides**. A plain merge or cherry-pick between them
-conflicts. When asked to bring a feature from one branch to the other:
+    git switch pwa && git merge main && git push origin pwa && git switch main
 
-1. Cherry-pick the commit; expect a conflict, usually in `app.py`'s import
-   line or wherever the PWA-specific code lives — resolve by keeping both
-   sides' additions, not picking one.
-2. Run the full test suite on the target branch after resolving. It should
-   still show the *union* of both branches' test counts.
-3. Never assume a feature landed on both branches just because it's on one.
-   If unsure which branch has what: `git log --oneline pwa..main` and
-   `git log --oneline main..pwa`.
+Merges are always clean (pwa is a strict mirror). Never commit directly to pwa.
+Still bump `CACHE` in `static/sw.js` whenever shell assets change.
 
-Ask before unifying them onto one branch — that's a bigger decision the user
-should make explicitly, not something to do as a side effect of a feature ask.
+## Background scheduler
+
+`start_scheduler()` (app.py) runs a daemon thread in the web process: daily tip
+web-push at PUSH_HOUR (default 8, server-local) and a nightly .xlsx backup at
+03:00 into `<db dir>/backups/` (keeps 14). It no-ops under pytest and when
+RUN_SCHEDULER=0. Web push needs VAPID_* env vars (see DEPLOY.md).
 
 ## Database migrations
 
