@@ -134,6 +134,9 @@ def test_vote_and_favorite(client, app_module):
     token = login_user(client, uid)
     # voting needs the CSRF token too
     assert client.post(f"/api/tips/{tid}/vote", json={"value": 1}).status_code == 400
+    # downvoting was removed from the product — only favourite (1) / remove (0) exist
+    assert client.post(f"/api/tips/{tid}/vote", json={"value": -1},
+                       headers={"X-CSRF-Token": token}).status_code == 400
     up = client.post(f"/api/tips/{tid}/vote", json={"value": 1},
                      headers={"X-CSRF-Token": token}).get_json()
     assert up["score"] == 1 and up["my_vote"] == 1 and up["favorited"] is True

@@ -852,31 +852,28 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 .mgmt-danger { color: var(--danger); }
 .mgmt-danger:hover { background: var(--danger-bg); color: var(--danger); }
 
-/* ── Vote + favorite controls, integrated into the card as a left rail ── */
+/* ── Favourite (heart) control, integrated into the card as a left rail ── */
 .vote-col {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
   flex: none; padding-right: var(--s-3); border-right: 1px solid var(--border-subtle);
 }
 .tip-main { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
-.vote-btn {
-  background: none; border: none; cursor: pointer; font-size: 0.82rem; line-height: 1;
-  color: var(--text-tertiary); padding: 3px 6px; border-radius: var(--r-sm);
-  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+.fav-btn {
+  background: none; border: none; cursor: pointer; font-size: 1.1rem; line-height: 1;
+  color: var(--text-tertiary); padding: 3px 7px; border-radius: var(--r-sm);
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease),
+              transform var(--motion-fast) var(--ease);
 }
-.vote-btn:hover { background: var(--accent-wash); color: var(--accent); }
-.vote-btn.up.on { color: #2d7d2d; }
-.vote-btn.down.on { color: var(--danger); }
-.vote-score { font-size: 0.82rem; font-weight: 600; color: var(--text-secondary); min-width: 20px; text-align: center; }
-[data-theme="dark"] .vote-btn.up.on { color: #7ed957; }
+.fav-btn:hover { background: var(--accent-wash); color: var(--gold); transform: scale(1.1); }
+.fav-btn.on { color: var(--gold); }
+.fav-count { font-size: 0.76rem; font-weight: 600; color: var(--text-tertiary); min-width: 16px; text-align: center; }
 
-
-/* Vote row inside the dark network card */
+/* Favourite row inside the dark network card */
 #net-card-actions { display: flex; align-items: center; gap: 8px; margin-top: 11px; }
-#net-card-actions .vote-btn { color: #9aa6b2; font-size: 0.92rem; }
-#net-card-actions .vote-btn:hover { color: #cfe8b0; background: rgba(255,255,255,0.08); }
-#net-card-actions .vote-btn.up.on { color: #7ed957; }
-#net-card-actions .vote-btn.down.on { color: #ff7a7a; }
-#net-card-actions .vote-score { color: #e7eef6; }
+#net-card-actions .fav-btn { color: #9aa6b2; font-size: 1.05rem; }
+#net-card-actions .fav-btn:hover { color: #ffcf33; background: rgba(255,255,255,0.08); }
+#net-card-actions .fav-btn.on { color: #ffcf33; }
+#net-card-actions .fav-count { color: #e7eef6; }
 
 /* ── Toast ── */
 #toast {

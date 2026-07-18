@@ -1130,13 +1130,16 @@ def logout():
 
 @app.post("/api/tips/<int:tip_id>/vote")
 def vote_tip(tip_id):
-    """Set the current user's vote to +1, -1, or 0 (0 removes it). Returns the updated tip."""
+    """Favourite (value 1) or un-favourite (value 0) a tip for the current user.
+
+    Downvoting was removed from the product (migration 009); favourites are stored as
+    value=1 votes, so a tip's score is simply how many people saved it. Returns the tip."""
     uid = current_user_id()
     if not uid:
-        return jsonify({"error": "Sign in to vote."}), 401
+        return jsonify({"error": "Sign in to save favourites."}), 401
     value = (request.get_json(force=True) or {}).get("value", 0)
-    if value not in (1, -1, 0):
-        return jsonify({"error": "value must be 1, -1, or 0"}), 400
+    if value not in (1, 0):
+        return jsonify({"error": "value must be 1 (favourite) or 0 (remove)"}), 400
     with get_db() as conn:
         if not conn.execute("SELECT 1 FROM tips WHERE id = ?", (tip_id,)).fetchone():
             return jsonify({"error": "tip not found"}), 404
