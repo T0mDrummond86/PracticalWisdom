@@ -345,6 +345,12 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
   font-size: 0.95rem; line-height: 1.5; color: var(--text);
   background: var(--surface-2); border-left: 3px solid var(--gold); border-radius: var(--r-md); padding: 12px 14px;
 }
+/* The anecdote (story/context) under the tip — matches the Cards/Network treatment. */
+#analysis-anecdote {
+  font-size: 0.9rem; line-height: 1.6; color: var(--text-secondary);
+  border-left: 3px solid var(--accent-soft); padding-left: 12px; white-space: pre-wrap;
+}
+#analysis-anecdote:empty { display: none; }
 .analysis-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-tertiary); font-weight: 600; }
 #analysis-options { display: flex; flex-direction: column; gap: 6px; }
 .analysis-opt {
