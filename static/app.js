@@ -316,6 +316,31 @@
     return s >= 0.72 ? "very close" : s >= 0.6 ? "close" : "related";
   }
 
+  // ── Draft persistence: typing must survive a reload, crash, or closed tab ──
+  // Every user-authored field mirrors its text into localStorage as they type
+  // (a real user lost a half-written tip to an unexpected page refresh). The
+  // field's opener restores the draft; a successful submit clears it.
+  function saveDraft(name, text) {
+    if (!name) return;   // a key function can return null to mean "don't draft this"
+    try {
+      if (text && text.trim()) localStorage.setItem("draft:" + name, text);
+      else localStorage.removeItem("draft:" + name);
+    } catch (e) {}
+  }
+  function loadDraft(name) {
+    try { return localStorage.getItem("draft:" + name) || ""; } catch (e) { return ""; }
+  }
+  function clearDraft(...names) {
+    try { names.forEach(n => localStorage.removeItem("draft:" + n)); } catch (e) {}
+  }
+  // `name` may be a function so one field can draft under a per-context key
+  // (e.g. the journal box drafts per tip).
+  function bindDraft(id, name) {
+    const el = $(id);
+    if (el) el.addEventListener("input", () =>
+      saveDraft(typeof name === "function" ? name() : name, el.value));
+  }
+
   let toastTimer;
   function toast(msg) {
     const t = $("toast");
@@ -778,9 +803,9 @@
     $("modal-title").textContent = "Add new tip";
     $("modal-save").textContent = "Save tip";
     $("modal-tags-row").style.display = "block";
-    $("modal-content").value = "";
-    $("modal-anecdote").value = "";
-    $("modal-tags").value = "";
+    $("modal-content").value = loadDraft("tip-content");     // restore any lost draft
+    $("modal-anecdote").value = loadDraft("tip-anecdote");
+    $("modal-tags").value = loadDraft("tip-tags");
     $("modal-status").textContent = "";
     $("modal-overlay").classList.remove("hidden");
     $("modal-content").focus();
@@ -816,6 +841,7 @@
           .filter(Boolean);
         const created = await api("POST", "/api/tips", { content, anecdote, tags });
         if (created.error) { $("modal-status").textContent = created.error; return; }
+        clearDraft("tip-content", "tip-anecdote", "tip-tags");   // safely saved — drop the draft
       }
       $("modal-overlay").classList.add("hidden");
       loadTips(activeTags.join(","));
@@ -853,7 +879,7 @@
   }
 
   $("batch-import-btn").onclick = () => {
-    $("batch-text").value = "";
+    $("batch-text").value = loadDraft("batch-text");   // restore any lost draft
     $("batch-input-status").textContent = "";
     $("batch-status").textContent = "";
     showBatchStage("input");
@@ -1022,6 +1048,7 @@
     if (!tips.length) return;
     $("batch-commit-btn").disabled = true;
     const result = await api("POST", "/api/tips/batch/commit", { tips });
+    if (result.imported != null) clearDraft("batch-text");   // safely imported — drop the draft
     $("batch-status").textContent =
       `Imported ${result.imported} tip${result.imported !== 1 ? "s" : ""}${result.skipped ? `, skipped ${result.skipped}` : ""}.`;
     loadSidebar();
@@ -2626,7 +2653,7 @@
     const section = $("journal-section");
     if (!currentUser) { section.style.display = "none"; return; }
     section.style.display = "";
-    $("journal-input").value = "";
+    $("journal-input").value = loadDraft("journal-" + tip.id);   // restore any lost draft
     // Seed the prompt from the admin's own "how to apply it" text when there is one —
     // curation flows straight into practice.
     const apply = (tip.analysis || {}).apply;
@@ -2649,6 +2676,7 @@
     const r = await api("POST", `/api/tips/${selectedFav.id}/journal`, { content });
     if (r.error) { toast(r.error); return; }
     $("journal-input").value = "";
+    clearDraft("journal-" + selectedFav.id);   // safely saved — drop the draft
     journalEntries.push(r);
     renderJournal();
   };
@@ -2755,7 +2783,10 @@
   // ════════════════ Community submissions ═══════════════════════
   // Any signed-in user can suggest a tip; it enters a moderation queue admins review.
   function openSuggest() {
-    $("suggest-content").value = ""; $("suggest-anecdote").value = ""; $("suggest-tags").value = "";
+    // Restore any draft a reload/crash interrupted.
+    $("suggest-content").value = loadDraft("suggest-content");
+    $("suggest-anecdote").value = loadDraft("suggest-anecdote");
+    $("suggest-tags").value = loadDraft("suggest-tags");
     $("suggest-status").textContent = "";
     $("suggest-history").innerHTML = "";
     $("suggest-overlay").classList.remove("hidden");
@@ -2839,6 +2870,7 @@
     if (res.error) { $("suggest-status").style.color = "var(--danger)"; $("suggest-status").textContent = res.error; return; }
     // keep the modal open so the user sees their tip land in the queue
     $("suggest-content").value = ""; $("suggest-anecdote").value = ""; $("suggest-tags").value = "";
+    clearDraft("suggest-content", "suggest-anecdote", "suggest-tags");   // safely submitted
     $("suggest-status").style.color = "var(--accent)";
     $("suggest-status").textContent = "Thanks — your tip is in the review queue.";
     toast("Thanks! Your tip is in the review queue.");
@@ -3327,10 +3359,24 @@
     if (tip) openFavAnalysis(tip);
   }
 
+  // Draft every user-authored field (see saveDraft above). The Add-Tip modal doubles
+  // as the EDIT modal — editing pre-fills from the server, so drafting there would
+  // leak edit text into the next new-tip draft; the key function opts out of edits.
+  bindDraft("modal-content", () => editingId ? null : "tip-content");
+  bindDraft("modal-anecdote", () => editingId ? null : "tip-anecdote");
+  bindDraft("modal-tags", () => editingId ? null : "tip-tags");
+  bindDraft("suggest-content", "suggest-content");
+  bindDraft("suggest-anecdote", "suggest-anecdote");
+  bindDraft("suggest-tags", "suggest-tags");
+  bindDraft("batch-text", "batch-text");
+  bindDraft("advise-input", "advise");
+  bindDraft("journal-input", () => selectedFav ? "journal-" + selectedFav.id : null);
+
   // Bootstrap: figure out the role first, then show the right view/controls.
   (async () => {
     await loadMe();
     applyRolePermissions();
+    $("advise-input").value = loadDraft("advise") || $("advise-input").value;
     maybeShowIntro();     // first visit only: a one-screen "what is this?"
     maybeShowIosHint();   // installed-PWA-capable iOS Safari: how to add to Home Screen
     openDeepLink();       // /?tip=<id> from share pages & notifications
@@ -3358,9 +3404,15 @@
         });
       }).catch(err => console.error("[PWA] service worker registration failed:", err));
 
-      // When the waiting worker takes over, reload once to pick up the new version.
+      // Reload once when a NEW worker replaces an old one (a real update), so the
+      // fresh assets take effect. Crucially: the FIRST time a worker claims a page
+      // that loaded uncontrolled (first visit, or after the browser evicted the old
+      // worker) is NOT an update — reloading there wiped a user's in-progress
+      // typing seconds after they arrived. Skip that initial claim.
+      let hadController = !!navigator.serviceWorker.controller;
       let refreshing = false;
       navigator.serviceWorker.addEventListener("controllerchange", () => {
+        if (!hadController) { hadController = true; return; }  // initial claim, not an update
         if (refreshing) return;
         refreshing = true;
         window.location.reload();
