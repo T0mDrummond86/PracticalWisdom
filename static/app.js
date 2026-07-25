@@ -2560,6 +2560,7 @@
   function openFavAnalysis(tip) {
     selectedFav = tip;
     $("analysis-tip").textContent = tip.content;
+    $("analysis-anecdote").textContent = tip.anecdote || "";   // the story/context behind the tip
     $("analysis-video").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";  // further info
     const overrides = tip.analysis || {};
     // An angle is available if the AI is on OR an admin has written text for it. Angles with
