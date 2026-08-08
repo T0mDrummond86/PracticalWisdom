@@ -10,6 +10,7 @@ import re
 
 import llm  # optional Gemini helpers (reads its key lazily, so import order is fine)
 import embeddings  # semantic-similarity foundation (also degrades to no-op without a key)
+import imagegen  # optional tip illustrations (3D AI Studio); no-ops without an API key
 
 # Load GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET / SECRET_KEY from a local .env file
 # (if present) so they persist across restarts without re-exporting them each time.
@@ -269,6 +270,8 @@ def tip_with_tags(conn, tip_id):
         "video_end": video_end,
         "video_embed": video_embed(video_url, video_start, video_end),
         "analysis": analysis,
+        # AI-generated illustration, if one has been made for this tip.
+        "image_url": ("/static/tip_images/" + tip["image_file"]) if tip["image_file"] else "",
     }
 
 
@@ -606,6 +609,69 @@ def set_tip_video(tip_id):
             return jsonify({"error": "tip not found"}), 404
         conn.execute("UPDATE tips SET video_url = ?, video_start = ?, video_end = ? WHERE id = ?",
                      (url, start, end, tip_id))
+        conn.commit()
+        return jsonify(tip_with_tags(conn, tip_id))
+
+
+TIP_IMAGE_DIR = os.path.join(os.path.dirname(__file__), "static", "tip_images")
+
+
+@app.post("/api/tips/images/sync")
+@admin_required
+def sync_tip_images():
+    """Attach shipped image files to their tips.
+
+    Images are generated offline, named by tip id, and deployed inside static/. The
+    production database still needs to know they exist — this scans the folder and
+    points each tip at its file (and clears the pointer if a file has gone). Costs
+    nothing; safe to re-run after every deploy that adds pictures."""
+    try:
+        files = {f for f in os.listdir(TIP_IMAGE_DIR) if f.endswith(".webp")}
+    except FileNotFoundError:
+        files = set()
+    linked = cleared = 0
+    with get_db() as conn:
+        for row in conn.execute("SELECT id, image_file FROM tips").fetchall():
+            want = "%d.webp" % row["id"] if ("%d.webp" % row["id"]) in files else ""
+            if want != (row["image_file"] or ""):
+                conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (want, row["id"]))
+                if want:
+                    linked += 1
+                else:
+                    cleared += 1
+        conn.commit()
+    return jsonify({"linked": linked, "cleared": cleared, "files": len(files)})
+
+
+@app.post("/api/tips/<int:tip_id>/image")
+@admin_required
+def generate_tip_image(tip_id):
+    """(Re)generate this tip's illustration in the library's chosen style. Admin only.
+
+    Body: {"style": "<style key>", "concept": "<optional visual concept override>"}.
+    Costs credits on 3D AI Studio, so it is never triggered automatically — only by
+    an explicit admin action or the offline batch script."""
+    if not imagegen.is_enabled():
+        return jsonify({"error": "Image generation isn't configured (set THREEDAI_API_KEY)."}), 503
+    data = request.get_json(force=True) or {}
+    style = (data.get("style") or os.environ.get("TIP_IMAGE_STYLE") or "").strip()
+    if style not in imagegen.STYLE_TEMPLATES:
+        return jsonify({"error": "Unknown image style."}), 400
+    with get_db() as conn:
+        row = conn.execute("SELECT content, anecdote FROM tips WHERE id = ?", (tip_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "tip not found"}), 404
+    concept = (data.get("concept") or "").strip() or row["content"]
+    try:
+        blob = imagegen.generate(imagegen.build_prompt(style, concept))
+    except imagegen.ImageGenError as e:
+        return jsonify({"error": "Image generation failed: %s" % e}), 502
+    os.makedirs(TIP_IMAGE_DIR, exist_ok=True)
+    fname = "%d.webp" % tip_id
+    with open(os.path.join(TIP_IMAGE_DIR, fname), "wb") as fh:
+        fh.write(blob)
+    with get_db() as conn:
+        conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tip_id))
         conn.commit()
         return jsonify(tip_with_tags(conn, tip_id))
 
@@ -1471,12 +1537,18 @@ def delete_path(path_id):
 @app.get("/tip/<int:tip_id>")
 def share_tip(tip_id):
     with get_db() as conn:
-        tip = conn.execute("SELECT content, anecdote FROM tips WHERE id = ?", (tip_id,)).fetchone()
+        tip = conn.execute(
+            "SELECT content, anecdote, image_file FROM tips WHERE id = ?", (tip_id,)
+        ).fetchone()
     if not tip:
         return "Tip not found.", 404
     content = tip["content"]
+    # A shared link previews far better with a picture, so pass an ABSOLUTE url —
+    # og:image is fetched by other sites and won't resolve a relative path.
+    image_url = (url_for("static", filename="tip_images/" + tip["image_file"], _external=True)
+                 if tip["image_file"] else "")
     return render_template("share.html", tip_id=tip_id, content=content,
-                           anecdote=tip["anecdote"] or "")
+                           anecdote=tip["anecdote"] or "", image_url=image_url)
 
 
 # ── Web push: daily-tip notifications ──
@@ -1525,13 +1597,20 @@ def send_daily_tip():
         return 0
     from pywebpush import webpush, WebPushException
     with get_db() as conn:
-        tip = conn.execute("SELECT id, content FROM tips ORDER BY RANDOM() LIMIT 1").fetchone()
+        tip = conn.execute(
+            "SELECT id, content, image_file FROM tips ORDER BY RANDOM() LIMIT 1"
+        ).fetchone()
         subs = conn.execute("SELECT id, endpoint, p256dh, auth FROM push_subscriptions").fetchall()
     if not tip or not subs:
         return 0
     import json as _json
-    payload = _json.dumps({"title": "Today's practical wisdom",
-                           "body": tip["content"], "tip_id": tip["id"]})
+    body = {"title": "Today's practical wisdom", "body": tip["content"], "tip_id": tip["id"]}
+    if tip["image_file"]:
+        # A picture makes the morning notification far more inviting where the platform
+        # supports it (Android/Chrome); others simply ignore the field.
+        body["image"] = url_for("static", filename="tip_images/" + tip["image_file"],
+                                _external=True)
+    payload = _json.dumps(body)
     sent, dead = 0, []
     for s in subs:
         try:

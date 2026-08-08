@@ -432,6 +432,21 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .stats-table td { padding: 5px 8px; border-bottom: 1px solid var(--border-subtle); }
 .stats-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
 
+/* ── Tip illustrations (AI-generated; one consistent style across the library) ── */
+.tip-image {
+  display: block; width: 100%; height: auto; border-radius: var(--r-md);
+  background: var(--surface-2);
+}
+#cv-image:not(:empty) { margin-bottom: var(--s-4); }
+#analysis-image:not(:empty) { margin-bottom: var(--s-3); }
+/* The network card floats over the graph and exists for quick scanning, so the picture
+   is a small thumbnail here — at full width it swallowed the card (half the screen) and
+   pushed the tip's own words below the fold. */
+#net-card-image:not(:empty) { margin-bottom: 10px; }
+#net-card-image .tip-image {
+  width: 92px; height: 92px; object-fit: cover; border-radius: 8px;
+}
+
 /* ── Tip journal (Explore pane): private log + saved AI coaching ── */
 #journal-section { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
 #journal-list { display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow-y: auto; }

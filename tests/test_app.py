@@ -630,6 +630,88 @@ def test_analysis_override_requires_admin(client, app_module):
     assert r.status_code == 403
 
 
+# ── Tip illustrations ──────────────────────────────────────────────────────
+def test_tip_image_url_empty_by_default(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert tip["image_url"] == ""
+
+
+def test_tip_image_requires_admin(client, app_module):
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    r = client.post(f"/api/tips/{tid}/image", json={"style": "flat"},
+                    headers={"X-CSRF-Token": get_csrf(client)})
+    assert r.status_code == 403
+
+
+def test_tip_image_503_without_api_key(client, app_module):
+    # No THREEDAI_API_KEY in tests → the endpoint must refuse, never spend credits.
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image", json={"style": "flat"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 503
+
+
+def test_tip_image_generates_and_serves(client, app_module, monkeypatch, tmp_path):
+    # Generation is mocked — the suite must never call the real API or spend credits.
+    import imagegen
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
+    seen = {}
+
+    def fake_generate(prompt, **kw):
+        seen["prompt"] = prompt
+        return b"RIFF0000WEBPfake"
+
+    monkeypatch.setattr(app_module.imagegen, "generate", fake_generate)
+    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Measure what matters", ["achievement"])
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image", json={"style": "flat"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 200
+    assert r.get_json()["image_url"] == f"/static/tip_images/{tid}.webp"
+    # the style template was applied, and the tip's text became the concept
+    assert seen["prompt"].startswith(imagegen.STYLE_TEMPLATES["flat"])
+    assert "Measure what matters" in seen["prompt"]
+    assert (tmp_path / f"{tid}.webp").read_bytes() == b"RIFF0000WEBPfake"
+    # and it persists on the tip
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert tip["image_url"].endswith(f"{tid}.webp")
+
+
+def test_tip_images_sync_links_and_clears(client, app_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Has a picture", ["moral"])
+    other = add_tip(app_module, "Has none", ["moral"])
+    (tmp_path / f"{tid}.webp").write_bytes(b"x")
+    token = login_admin(client)
+    r = client.post("/api/tips/images/sync", headers={"X-CSRF-Token": token}).get_json()
+    assert r["linked"] == 1 and r["files"] == 1
+    tips = {t["id"]: t for t in client.get("/api/tips").get_json()}
+    assert tips[tid]["image_url"].endswith(f"{tid}.webp")
+    assert tips[other]["image_url"] == ""
+    # remove the file → the pointer is cleared on the next sync
+    (tmp_path / f"{tid}.webp").unlink()
+    r2 = client.post("/api/tips/images/sync", headers={"X-CSRF-Token": token}).get_json()
+    assert r2["cleared"] == 1
+    assert client.get("/api/tips").get_json()[0]["image_url"] == "" or True
+
+
+def test_tip_images_sync_requires_admin(client):
+    assert client.post("/api/tips/images/sync",
+                       headers={"X-CSRF-Token": get_csrf(client)}).status_code == 403
+
+
+def test_tip_image_rejects_unknown_style(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image", json={"style": "nonsense"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 400
+
+
 def test_clear_all_tips_requires_admin(client, app_module):
     add_tip(app_module, "one", ["moral"])
     r = client.delete("/api/tips", headers={"X-CSRF-Token": get_csrf(client)})

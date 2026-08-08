@@ -510,6 +510,16 @@
       allowfullscreen></iframe></div>`;
   }
 
+  // A tip's AI illustration, when it has one. Rendered above the text in every view;
+  // silently absent otherwise, so tips without a picture look exactly as before.
+  function renderTipImage(containerId, tip) {
+    const box = $(containerId);
+    if (!box) return;
+    box.innerHTML = (tip && tip.image_url)
+      ? `<img class="tip-image" src="${escHtml(tip.image_url)}" alt="" loading="lazy">`
+      : "";
+  }
+
   // Add the host's autoplay flag to an embed src — used when the player appears in
   // response to a click, so it starts playing without a second tap on the iframe.
   function withAutoplay(src) {
@@ -1811,6 +1821,7 @@
   function showCard(tip) {
     $("net-card-content").textContent = tip.content;
     $("net-card-anecdote").textContent = tip.anecdote || "";
+    renderTipImage("net-card-image", tip);    // the tip's illustration, if it has one
     renderCardVideo("net-card-video", tip);   // "▶ Watch the video" when one is attached
     // A fresh selection starts with the tag-refinement tools tucked away again.
     $("net-card").classList.remove("refine-open");
@@ -2279,6 +2290,7 @@
   function renderCard(tip) {
     $("cv-content").textContent = tip.content;
     $("cv-anecdote").textContent = tip.anecdote || "";
+    renderTipImage("cv-image", tip);    // the tip's illustration, if it has one
     renderCardVideo("cv-video", tip);   // "▶ Watch the video" when one is attached
     $("cv-tags").innerHTML = tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("");
     // No favourite button here: in Cards view, saving IS the swipe (right = save),
@@ -2560,6 +2572,7 @@
   function openFavAnalysis(tip) {
     selectedFav = tip;
     $("analysis-tip").textContent = tip.content;
+    renderTipImage("analysis-image", tip);                     // the tip's illustration, if any
     $("analysis-anecdote").textContent = tip.anecdote || "";   // the story/context behind the tip
     $("analysis-video").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";  // further info
     const overrides = tip.analysis || {};
@@ -3179,6 +3192,18 @@
   dismissOnBackdrop("paths-overlay");
 
   // ── Admin: usage stats ──
+  // Tip pictures are generated offline and deployed inside static/; this points each
+  // tip at its file so the live database knows the pictures exist. Costs nothing.
+  $("sync-images-btn").onclick = async () => {
+    closeMgmtMenu();
+    toast("Looking for tip pictures…");
+    const r = await api("POST", "/api/tips/images/sync");
+    if (r.error) { toast(r.error); return; }
+    toast(`${r.files} picture${r.files !== 1 ? "s" : ""} found — ${r.linked} newly attached.`);
+    loadTips(activeTags.join(","));
+    renderCurrentView();
+  };
+
   $("usage-stats-btn").onclick = async () => {
     $("stats-body").innerHTML = SPINNER;
     $("stats-overlay").classList.remove("hidden");
