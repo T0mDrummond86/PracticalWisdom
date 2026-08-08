@@ -945,9 +945,14 @@ label { display: block; font-size: 0.8rem; color: var(--text-secondary); font-we
 
 /* ── Card (sequential) view — one tip at a time, mobile-friendly ── */
 #card-view {
-  flex: 1; display: none; flex-direction: column; align-items: center; justify-content: center;
+  /* NB: no `justify-content: center` here. Centring a scroll container clips its
+     content's top when the content is taller than the box, and the browser cannot
+     scroll to it — long tips with a picture had the image stuck off-screen above.
+     `margin: auto 0` on the child centres it when it fits and scrolls when it doesn't. */
+  flex: 1; display: none; flex-direction: column; align-items: center;
   padding: 28px 18px; overflow-y: auto; background: var(--bg); min-height: 0;
 }
+#card-view > #card-stage { margin: auto 0; }
 #card-stage { width: 100%; max-width: 600px; display: flex; flex-direction: column; gap: 16px; }
 #cv-card {
   position: relative; touch-action: pan-y; will-change: transform;
