@@ -84,6 +84,9 @@ def main():
     ap.add_argument("--style", default=os.environ.get("TIP_IMAGE_STYLE", "goldline"))
     ap.add_argument("--limit", type=int, default=0, help="only do the first N (trial run)")
     ap.add_argument("--dry-run", action="store_true", help="print prompts, spend nothing")
+    ap.add_argument("--fresh-concepts", action="store_true",
+                    help="re-derive concepts for tips still missing an image (use when a "
+                         "retry keeps failing — a different metaphor usually gets through)")
     args = ap.parse_args()
 
     if args.style not in imagegen.STYLE_TEMPLATES:
@@ -104,6 +107,13 @@ def main():
         print("nothing to do"); return
 
     cache = load_concept_cache()
+    if args.fresh_concepts:
+        # These tips have no image, so their cached metaphor is the prime suspect —
+        # drop it and let a new one be derived.
+        for tip_id, _ in todo:
+            cache.pop(str(tip_id), None)
+        save_concept_cache(cache)
+        print("cleared cached concepts for %d unfinished tips" % len(todo))
     ok = failed = 0
     started = time.time()
 

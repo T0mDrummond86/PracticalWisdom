@@ -7,7 +7,10 @@
 <meta property="og:title" content="A piece of practical wisdom">
 <meta property="og:description" content="{{ content }}">
 <meta property="og:type" content="article">
-<meta name="twitter:card" content="summary">
+{% if image_url %}<meta property="og:image" content="{{ image_url }}">
+<meta name="twitter:card" content="summary_large_image">
+{% else %}<meta name="twitter:card" content="summary">
+{% endif %}
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,6 +25,7 @@
   }
   .brand { font-family: Georgia, serif; font-weight: 600; font-size: 1rem; margin-bottom: 20px; }
   .brand .p { color: #e5b64a; } .brand .w { color: #f2eee3; }
+  .pic { display: block; width: 100%; height: auto; border-radius: 10px; margin-bottom: 20px; }
   .tip { font-size: 1.35rem; line-height: 1.5; font-weight: 500; }
   .anecdote { margin-top: 14px; font-size: 0.92rem; line-height: 1.6; color: #a2abc2;
     border-left: 3px solid #5a8a2a; padding-left: 12px; }
@@ -36,6 +40,7 @@
 <body>
   <div class="card">
     <div class="brand"><span class="p">Practical</span> <span class="w">Wisdom</span></div>
+    {% if image_url %}<img class="pic" src="{{ image_url }}" alt="">{% endif %}
     <div class="tip">{{ content }}</div>
     {% if anecdote %}<div class="anecdote">{{ anecdote }}</div>{% endif %}
     <a class="open" href="/?tip={{ tip_id }}">Explore this tip in the app →</a>

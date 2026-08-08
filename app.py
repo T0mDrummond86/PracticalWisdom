@@ -1537,12 +1537,18 @@ def delete_path(path_id):
 @app.get("/tip/<int:tip_id>")
 def share_tip(tip_id):
     with get_db() as conn:
-        tip = conn.execute("SELECT content, anecdote FROM tips WHERE id = ?", (tip_id,)).fetchone()
+        tip = conn.execute(
+            "SELECT content, anecdote, image_file FROM tips WHERE id = ?", (tip_id,)
+        ).fetchone()
     if not tip:
         return "Tip not found.", 404
     content = tip["content"]
+    # A shared link previews far better with a picture, so pass an ABSOLUTE url —
+    # og:image is fetched by other sites and won't resolve a relative path.
+    image_url = (url_for("static", filename="tip_images/" + tip["image_file"], _external=True)
+                 if tip["image_file"] else "")
     return render_template("share.html", tip_id=tip_id, content=content,
-                           anecdote=tip["anecdote"] or "")
+                           anecdote=tip["anecdote"] or "", image_url=image_url)
 
 
 # ── Web push: daily-tip notifications ──
@@ -1591,13 +1597,20 @@ def send_daily_tip():
         return 0
     from pywebpush import webpush, WebPushException
     with get_db() as conn:
-        tip = conn.execute("SELECT id, content FROM tips ORDER BY RANDOM() LIMIT 1").fetchone()
+        tip = conn.execute(
+            "SELECT id, content, image_file FROM tips ORDER BY RANDOM() LIMIT 1"
+        ).fetchone()
         subs = conn.execute("SELECT id, endpoint, p256dh, auth FROM push_subscriptions").fetchall()
     if not tip or not subs:
         return 0
     import json as _json
-    payload = _json.dumps({"title": "Today's practical wisdom",
-                           "body": tip["content"], "tip_id": tip["id"]})
+    body = {"title": "Today's practical wisdom", "body": tip["content"], "tip_id": tip["id"]}
+    if tip["image_file"]:
+        # A picture makes the morning notification far more inviting where the platform
+        # supports it (Android/Chrome); others simply ignore the field.
+        body["image"] = url_for("static", filename="tip_images/" + tip["image_file"],
+                                _external=True)
+    payload = _json.dumps(body)
     sent, dead = 0, []
     for s in subs:
         try:

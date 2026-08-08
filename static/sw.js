@@ -10,18 +10,21 @@
  *
  * Bump CACHE when you ship new shell assets — the old cache is purged on activate.
  */
-const CACHE = "pw-cache-v11";
+const CACHE = "pw-cache-v12";
 
 // ── Daily-tip notifications ──
 self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (e) {}
-  event.waitUntil(self.registration.showNotification(data.title || "Practical Wisdom", {
+  const opts = {
     body: data.body || "",
     icon: "/static/icons/icon-192.png",
     badge: "/static/icons/icon-192.png",
     data: { url: data.tip_id ? "/?tip=" + data.tip_id : "/" },
-  }));
+  };
+  // The tip's illustration, where the platform shows one (Android/Chrome).
+  if (data.image) opts.image = data.image;
+  event.waitUntil(self.registration.showNotification(data.title || "Practical Wisdom", opts));
 });
 
 self.addEventListener("notificationclick", (event) => {

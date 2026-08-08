@@ -439,9 +439,13 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 }
 #cv-image:not(:empty) { margin-bottom: var(--s-4); }
 #analysis-image:not(:empty) { margin-bottom: var(--s-3); }
-/* The network card is a fixed-width dark panel — keep the picture compact there. */
+/* The network card floats over the graph and exists for quick scanning, so the picture
+   is a small thumbnail here — at full width it swallowed the card (half the screen) and
+   pushed the tip's own words below the fold. */
 #net-card-image:not(:empty) { margin-bottom: 10px; }
-#net-card-image .tip-image { border-radius: 8px; }
+#net-card-image .tip-image {
+  width: 92px; height: 92px; object-fit: cover; border-radius: 8px;
+}
 
 /* ── Tip journal (Explore pane): private log + saved AI coaching ── */
 #journal-section { display: flex; flex-direction: column; gap: 9px; margin-top: 14px; border-top: 1px solid var(--border-subtle); padding-top: 14px; }
