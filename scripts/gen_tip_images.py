@@ -100,9 +100,16 @@ def main():
     if args.limit:
         todo = todo[:args.limit]
 
-    print("style=%s | tips in export=%d | already done=%d | to generate=%d | ~%d credits"
-          % (args.style, len(tips), len(tips) - len([t for t in tips if not os.path.exists(
-              os.path.join(OUT, "%d.webp" % t[0]))]), len(todo), len(todo) * 5), flush=True)
+    done_count = len(tips) - len([t for t in tips
+                                  if not os.path.exists(os.path.join(OUT, "%d.webp" % t[0]))])
+    # Cost differs wildly by backend, so quote the one actually in use rather than a
+    # hardcoded number (the old "5 credits" figure was wrong by ~6x and cost real money).
+    if imagegen.provider() == "gemini":
+        est = "~$%.2f at Gemini's ~$0.04/image" % (len(todo) * 0.04)
+    else:
+        est = "~%d credits at 3D AI Studio's observed ~30/image" % (len(todo) * 30)
+    print("style=%s | backend=%s | tips in export=%d | already done=%d | to generate=%d | %s"
+          % (args.style, imagegen.provider(), len(tips), done_count, len(todo), est), flush=True)
     if not todo:
         print("nothing to do"); return
 

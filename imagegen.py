@@ -1,31 +1,36 @@
-"""Tip illustrations via the 3D AI Studio image API.
+"""Tip illustrations — one picture per tip, all in a single consistent style.
 
-One picture per tip, all in a single consistent style. The style lives in a STYLE
-TEMPLATE (a fixed prompt prefix); each tip contributes only a short visual concept,
-so 130 images share a look. The API exposes no seed or negative-prompt parameter,
-so consistency comes entirely from the wording of that template.
+The style lives in a STYLE TEMPLATE (a fixed prompt prefix); each tip contributes only
+a short visual concept, so the whole library shares a look. Neither backend exposes a
+seed, so consistency comes entirely from the wording of that template.
 
-Flow (async, per their docs):
-    POST /v1/images/gemini/2.5/flash/generate/  -> {"task_id": ...}
-    GET  /v1/generation-request/<task_id>/status/ -> poll until "FINISHED"
-    then download results[0]["asset"]
+TWO BACKENDS, same public interface (generate / is_enabled):
 
-Credits: Gemini 2.5 Flash is the cheap tier (~5 credits/image) — deliberately chosen
-over Gemini 3 Pro (50/image) because these render small on a card.
+  * Google Gemini (GEMINI_API_KEY) — the default when configured. Synchronous, cheap
+    (~$0.04/image) and barely throttled.
+  * 3D AI Studio (THREEDAI_API_KEY) — the original. Async submit/poll/download, heavily
+    throttled (~1 request per 30s) and far pricier than its docs implied: it billed
+    ~30 credits/image, so it is now only the fallback.
 
-The API key is read from the environment (THREEDAI_API_KEY) and never logged.
+Keys are read from the environment and never logged.
 """
+import base64
 import os
 import re
 import time
 
 import requests
 
+# ── 3D AI Studio (legacy backend) ──
 BASE = os.environ.get("THREEDAI_API_BASE", "https://api.3daistudio.com/v1")
-# Model path segment; overridable so a different tier can be tried without a code change.
 MODEL_PATH = os.environ.get("THREEDAI_IMAGE_MODEL", "images/gemini/2.5/flash")
 POLL_INTERVAL = 3      # seconds between status checks
 POLL_TIMEOUT = 300     # give up on one image after 5 minutes
+
+# ── Google Gemini (preferred backend) ──
+GEMINI_BASE = os.environ.get(
+    "GEMINI_API_BASE", "https://generativelanguage.googleapis.com/v1beta")
+GEMINI_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image")
 
 
 class ImageGenError(Exception):
@@ -36,8 +41,20 @@ def api_key():
     return os.environ.get("THREEDAI_API_KEY")
 
 
+def gemini_key():
+    return os.environ.get("GEMINI_API_KEY")
+
+
+def provider():
+    """Which backend to use. Gemini wins when configured; explicit override respected."""
+    forced = (os.environ.get("IMAGE_PROVIDER") or "").strip().lower()
+    if forced in ("gemini", "threedai"):
+        return forced
+    return "gemini" if gemini_key() else "threedai"
+
+
 def is_enabled():
-    return bool(api_key())
+    return bool(gemini_key() or api_key())
 
 
 # ── Style templates: the five candidates the user picks from ──────────────────
@@ -194,7 +211,73 @@ def to_webp(png_bytes, max_width=1000, quality=82):
     return out.getvalue()
 
 
-def generate(prompt, webp=True, **kw):
-    """submit -> poll -> download, returning image bytes (WebP by default)."""
-    blob = download(wait_for(submit(prompt, **kw)))
+# ── Google Gemini backend ────────────────────────────────────────────────────
+def _gemini_generate(prompt, aspect_ratio="4:3", max_retries=5, on_wait=None):
+    """One image from Gemini, returned as raw bytes. Synchronous — no polling.
+
+    Images come back inline as base64 in the response, so there is nothing to download
+    separately. 429/503 (rate limit / model busy) are retried with a short backoff.
+    """
+    key = gemini_key()
+    if not key:
+        raise ImageGenError("GEMINI_API_KEY is not set")
+    url = "%s/models/%s:generateContent" % (GEMINI_BASE, GEMINI_MODEL)
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "responseModalities": ["IMAGE"],
+            "imageConfig": {"aspectRatio": aspect_ratio},
+        },
+    }
+    for attempt in range(max_retries):
+        try:
+            r = requests.post(url, timeout=180,
+                              headers={"x-goog-api-key": key,
+                                       "Content-Type": "application/json"},
+                              json=payload)
+        except requests.RequestException as e:
+            raise ImageGenError("request failed: %s" % e)
+
+        if r.status_code in (429, 503) and attempt < max_retries - 1:
+            wait = 10 * (attempt + 1)
+            if on_wait:
+                on_wait(wait, attempt + 1)
+            time.sleep(wait)
+            continue
+
+        # Older/other models reject imageConfig or responseModalities — drop them and retry
+        # once rather than failing the whole batch on a config the model doesn't take.
+        if r.status_code == 400 and "generationConfig" in payload:
+            body = r.text[:400]
+            if "imageConfig" in body or "aspectRatio" in body:
+                payload["generationConfig"].pop("imageConfig", None)
+                continue
+            if "responseModalities" in body:
+                payload.pop("generationConfig", None)
+                continue
+
+        if r.status_code != 200:
+            raise ImageGenError("Gemini API %s: %s" % (r.status_code, r.text[:300]))
+
+        try:
+            parts = r.json()["candidates"][0]["content"]["parts"]
+        except (ValueError, KeyError, IndexError) as e:
+            raise ImageGenError("unexpected Gemini response: %s" % e)
+        for p in parts:
+            inline = p.get("inlineData") or p.get("inline_data")
+            if inline and inline.get("data"):
+                return base64.b64decode(inline["data"])
+        raise ImageGenError("Gemini returned no image (safety filter or text-only reply)")
+    raise ImageGenError("Gemini still unavailable after %d attempts" % max_retries)
+
+
+def generate(prompt, webp=True, aspect_ratio="4:3", resolution="1K",
+             max_retries=8, on_wait=None):
+    """Make one image with whichever backend is configured. Returns WebP bytes."""
+    if provider() == "gemini":
+        blob = _gemini_generate(prompt, aspect_ratio=aspect_ratio, on_wait=on_wait)
+    else:
+        blob = download(wait_for(submit(prompt, aspect_ratio=aspect_ratio,
+                                        resolution=resolution,
+                                        max_retries=max_retries, on_wait=on_wait)))
     return to_webp(blob) if webp else blob

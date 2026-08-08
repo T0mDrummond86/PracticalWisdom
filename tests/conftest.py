@@ -19,9 +19,10 @@ def app_module(tmp_path, monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "admin")
     monkeypatch.setenv("ADMIN_PASSWORD_HASH", "")   # force hashing of ADMIN_PASSWORD above
     monkeypatch.setenv("GROQ_API_KEY", "")          # disable real text-generation calls in tests
-    # Image generation costs real credits — never let the suite reach that API. Tests that
-    # exercise it monkeypatch imagegen.generate explicitly.
+    # Image generation costs real money — never let the suite reach either backend. Tests
+    # that exercise it monkeypatch imagegen.generate explicitly.
     monkeypatch.setenv("THREEDAI_API_KEY", "")
+    monkeypatch.setenv("GEMINI_API_KEY", "")
     import app
     importlib.reload(app)   # re-read env, reset module state (rate limiter, hash, routes)
     # fastembed is installed, so embeddings.is_enabled() is True by default — force it OFF so the
