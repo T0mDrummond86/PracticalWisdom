@@ -10,7 +10,7 @@
  *
  * Bump CACHE when you ship new shell assets — the old cache is purged on activate.
  */
-const CACHE = "pw-cache-v12";
+const CACHE = "pw-cache-v13";
 
 // ── Daily-tip notifications ──
 self.addEventListener("push", (event) => {
