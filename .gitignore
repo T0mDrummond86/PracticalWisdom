@@ -5,3 +5,6 @@ __pycache__/
 .env
 tips.db
 .pytest_cache/
+
+# Local style-comparison samples (not part of the app)
+style_samples/

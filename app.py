@@ -616,6 +616,33 @@ def set_tip_video(tip_id):
 TIP_IMAGE_DIR = os.path.join(os.path.dirname(__file__), "static", "tip_images")
 
 
+@app.post("/api/tips/images/sync")
+@admin_required
+def sync_tip_images():
+    """Attach shipped image files to their tips.
+
+    Images are generated offline, named by tip id, and deployed inside static/. The
+    production database still needs to know they exist — this scans the folder and
+    points each tip at its file (and clears the pointer if a file has gone). Costs
+    nothing; safe to re-run after every deploy that adds pictures."""
+    try:
+        files = {f for f in os.listdir(TIP_IMAGE_DIR) if f.endswith(".webp")}
+    except FileNotFoundError:
+        files = set()
+    linked = cleared = 0
+    with get_db() as conn:
+        for row in conn.execute("SELECT id, image_file FROM tips").fetchall():
+            want = "%d.webp" % row["id"] if ("%d.webp" % row["id"]) in files else ""
+            if want != (row["image_file"] or ""):
+                conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (want, row["id"]))
+                if want:
+                    linked += 1
+                else:
+                    cleared += 1
+        conn.commit()
+    return jsonify({"linked": linked, "cleared": cleared, "files": len(files)})
+
+
 @app.post("/api/tips/<int:tip_id>/image")
 @admin_required
 def generate_tip_image(tip_id):

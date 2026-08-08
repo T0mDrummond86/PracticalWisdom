@@ -3192,6 +3192,18 @@
   dismissOnBackdrop("paths-overlay");
 
   // ── Admin: usage stats ──
+  // Tip pictures are generated offline and deployed inside static/; this points each
+  // tip at its file so the live database knows the pictures exist. Costs nothing.
+  $("sync-images-btn").onclick = async () => {
+    closeMgmtMenu();
+    toast("Looking for tip pictures…");
+    const r = await api("POST", "/api/tips/images/sync");
+    if (r.error) { toast(r.error); return; }
+    toast(`${r.files} picture${r.files !== 1 ? "s" : ""} found — ${r.linked} newly attached.`);
+    loadTips(activeTags.join(","));
+    renderCurrentView();
+  };
+
   $("usage-stats-btn").onclick = async () => {
     $("stats-body").innerHTML = SPINNER;
     $("stats-overlay").classList.remove("hidden");

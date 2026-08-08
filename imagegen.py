@@ -16,6 +16,7 @@ over Gemini 3 Pro (50/image) because these render small on a card.
 The API key is read from the environment (THREEDAI_API_KEY) and never logged.
 """
 import os
+import re
 import time
 
 import requests
@@ -91,25 +92,50 @@ def _headers():
     return {"Authorization": "Bearer " + key, "Content-Type": "application/json"}
 
 
-def submit(prompt, aspect_ratio="4:3", resolution="1K", output_format="webp"):
-    """Start one image generation. Returns the task id."""
+def _retry_after(body, default=30):
+    """The API's 429 body carries 'Expected available in N seconds' — honour it."""
+    m = re.search(r"in\s+(\d+)\s+second", body or "")
+    return int(m.group(1)) + 2 if m else default
+
+
+def submit(prompt, aspect_ratio="4:3", resolution="1K", output_format=None,
+           max_retries=8, on_wait=None):
+    """Start one image generation. Returns the task id.
+
+    The API throttles hard (roughly one request per half-minute), so a 429 is
+    normal rather than exceptional: wait the advertised time and try again.
+    A throttled request is rejected before generating, so it costs no credits.
+    """
     url = "%s/%s/generate/" % (BASE, MODEL_PATH)
-    try:
-        r = requests.post(url, headers=_headers(), timeout=60, json={
-            "prompt": prompt,
-            "aspect_ratio": aspect_ratio,
-            "resolution": resolution,
-            "num_images": 1,
-            "output_format": output_format,
-        })
-    except requests.RequestException as e:
-        raise ImageGenError("request failed: %s" % e)
-    if r.status_code not in (200, 201):
+    payload = {
+        "prompt": prompt,
+        "aspect_ratio": aspect_ratio,
+        "resolution": resolution,
+        "num_images": 1,
+    }
+    # Gemini 2.5 Flash rejects output_format outright ("invalid input") and always
+    # returns PNG — so only send it when a caller explicitly asks, and convert to
+    # WebP locally instead (see to_webp).
+    if output_format:
+        payload["output_format"] = output_format
+    for attempt in range(max_retries):
+        try:
+            r = requests.post(url, headers=_headers(), timeout=60, json=payload)
+        except requests.RequestException as e:
+            raise ImageGenError("request failed: %s" % e)
+        if r.status_code in (200, 201):
+            try:
+                return r.json()["task_id"]
+            except (ValueError, KeyError) as e:
+                raise ImageGenError("unexpected submit response: %s" % e)
+        if r.status_code == 429 and attempt < max_retries - 1:
+            wait = _retry_after(r.text)
+            if on_wait:
+                on_wait(wait, attempt + 1)
+            time.sleep(wait)
+            continue
         raise ImageGenError("API %s: %s" % (r.status_code, r.text[:300]))
-    try:
-        return r.json()["task_id"]
-    except (ValueError, KeyError) as e:
-        raise ImageGenError("unexpected submit response: %s" % e)
+    raise ImageGenError("still rate-limited after %d attempts" % max_retries)
 
 
 def wait_for(task_id, timeout=POLL_TIMEOUT):
@@ -127,9 +153,12 @@ def wait_for(task_id, timeout=POLL_TIMEOUT):
         status = (data.get("status") or "").upper()
         if status == "FINISHED":
             results = data.get("results") or []
-            if not results or not results[0].get("asset"):
-                raise ImageGenError("finished but no image returned")
-            return results[0]["asset"]
+            if results and results[0].get("asset"):
+                return results[0]["asset"]
+            # The API can report FINISHED a beat before the asset URL is attached —
+            # keep polling rather than treating that instant as a failure.
+            time.sleep(POLL_INTERVAL)
+            continue
         if status in ("FAILED", "ERROR", "CANCELLED"):
             raise ImageGenError("generation failed: %s" % (data.get("failure_reason") or status))
         time.sleep(POLL_INTERVAL)
@@ -147,6 +176,25 @@ def download(asset_url):
     return r.content
 
 
-def generate(prompt, **kw):
-    """submit -> poll -> download, returning the image bytes."""
-    return download(wait_for(submit(prompt, **kw)))
+def to_webp(png_bytes, max_width=1000, quality=82):
+    """PNG from the API -> a right-sized WebP for the web app.
+
+    The API returns PNG (often 1K+), which is far larger than these need to be on a
+    card. Converting locally keeps the repo small and avoids an unsupported API param.
+    """
+    from io import BytesIO
+    from PIL import Image
+
+    img = Image.open(BytesIO(png_bytes)).convert("RGB")
+    if img.width > max_width:
+        img = img.resize((max_width, round(img.height * max_width / img.width)),
+                         Image.LANCZOS)
+    out = BytesIO()
+    img.save(out, format="WEBP", quality=quality, method=6)
+    return out.getvalue()
+
+
+def generate(prompt, webp=True, **kw):
+    """submit -> poll -> download, returning image bytes (WebP by default)."""
+    blob = download(wait_for(submit(prompt, **kw)))
+    return to_webp(blob) if webp else blob

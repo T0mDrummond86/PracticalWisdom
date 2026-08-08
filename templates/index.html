@@ -84,6 +84,7 @@
           <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">✨ Rebuild semantic index</button>
           <button class="btn secondary" id="manage-paths-btn">🧭 Curated paths</button>
           <button class="btn secondary" id="usage-stats-btn">📈 Usage stats</button>
+          <button class="btn secondary" id="sync-images-btn" title="Attach newly deployed tip pictures to their tips">🖼 Sync tip pictures</button>
           <div class="mgmt-sep"></div>
           <button class="btn secondary" id="export-xlsx-btn">⤓ Export all tips (Excel)</button>
           <button class="btn secondary" id="import-xlsx-btn">⤒ Import tips from Excel…</button>
@@ -590,6 +591,7 @@
             <li><em>Import tips from Excel</em> — load a spreadsheet back in to refill the database (matched by tip text, so re-importing won't duplicate).</li>
             <li><em>Clear all tips</em> — permanently delete every tip at once (tag names are kept). This cannot be undone, so export a backup first.</li>
             <li><em>Clear all tags</em> — permanently delete the entire tag list and unlink every tip from its tags (the tips themselves stay). This cannot be undone.</li>
+            <li><em>Sync tip pictures</em> — after a deploy that adds new tip illustrations, this attaches them to their tips. Free and safe to re-run.</li>
             <li><em>Curated paths</em> — author ordered tip sequences readers can follow in Cards view.</li>
             <li><em>Usage stats</em> — 30-day counts of what's viewed and used. A nightly backup .xlsx is also written next to the database (last 14 kept).</li>
           </ul>
