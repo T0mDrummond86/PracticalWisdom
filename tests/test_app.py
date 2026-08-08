@@ -698,6 +698,49 @@ def test_tip_images_sync_links_and_clears(client, app_module, monkeypatch, tmp_p
     assert client.get("/api/tips").get_json()[0]["image_url"] == "" or True
 
 
+def test_imagegen_picks_gemini_when_keyed(monkeypatch):
+    import imagegen
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.setenv("THREEDAI_API_KEY", "")
+    assert imagegen.provider() == "gemini" and imagegen.is_enabled()
+    # an explicit override still wins, so the old backend stays reachable
+    monkeypatch.setenv("IMAGE_PROVIDER", "threedai")
+    assert imagegen.provider() == "threedai"
+
+
+def test_gemini_generate_decodes_inline_image(monkeypatch):
+    import base64, imagegen
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+    monkeypatch.delenv("IMAGE_PROVIDER", raising=False)
+    png = b"\x89PNG\r\n\x1a\nfake"
+
+    class FakeResp:
+        status_code = 200
+        text = ""
+        def json(self):
+            return {"candidates": [{"content": {"parts": [
+                {"inlineData": {"mimeType": "image/png",
+                                "data": base64.b64encode(png).decode()}}]}}]}
+
+    monkeypatch.setattr(imagegen.requests, "post", lambda *a, **k: FakeResp())
+    assert imagegen._gemini_generate("a prompt") == png
+
+
+def test_gemini_no_image_raises(monkeypatch):
+    import imagegen, pytest
+    monkeypatch.setenv("GEMINI_API_KEY", "k")
+
+    class FakeResp:                      # a text-only reply (e.g. safety refusal)
+        status_code = 200
+        text = ""
+        def json(self):
+            return {"candidates": [{"content": {"parts": [{"text": "I can't"}]}}]}
+
+    monkeypatch.setattr(imagegen.requests, "post", lambda *a, **k: FakeResp())
+    with pytest.raises(imagegen.ImageGenError):
+        imagegen._gemini_generate("a prompt")
+
+
 def test_tip_images_sync_requires_admin(client):
     assert client.post("/api/tips/images/sync",
                        headers={"X-CSRF-Token": get_csrf(client)}).status_code == 403

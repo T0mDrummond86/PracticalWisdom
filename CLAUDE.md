@@ -22,6 +22,28 @@ web-push at PUSH_HOUR (default 8, server-local) and a nightly .xlsx backup at
 03:00 into `<db dir>/backups/` (keeps 14). It no-ops under pytest and when
 RUN_SCHEDULER=0. Web push needs VAPID_* env vars (see DEPLOY.md).
 
+## Tip illustrations
+
+One picture per tip in a single style, generated OFFLINE by
+`scripts/gen_tip_images.py` and committed to `static/tip_images/<tip_id>.webp`
+(files are named by PRODUCTION tip id, taken from an Excel export — the live DB
+is only reachable through the deployed app). After deploying, admin clicks
+**🖼 Sync tip pictures** to attach them.
+
+- `imagegen.py` has two backends behind one interface: **Gemini**
+  (`GEMINI_API_KEY`, ~$0.04/image, ~10s, preferred) and **3D AI Studio**
+  (`THREEDAI_API_KEY`, ~30 credits/image, throttled to ~1 request/30s).
+  `IMAGE_PROVIDER` forces one.
+- Never let tests or a page request trigger generation — it costs real money.
+  `conftest.py` blanks BOTH keys; tests monkeypatch `imagegen.generate`.
+- **Verify pricing against the provider's own API/dashboard before quoting a
+  batch cost.** A search-snippet figure ("5 credits/image") was wrong by ~6x
+  and burned a user's balance mid-batch.
+- Images show full-size in Cards and the Explore pane, as a 92px thumbnail in
+  the Network card (full width there swallowed half the screen), and on the
+  share page incl. `og:image`. Deliberately NOT in list rows — mixed
+  coverage reads as broken in a list.
+
 ## Database migrations
 
 Schema lives in `migrations/NNN_description.sql`, applied in filename order,

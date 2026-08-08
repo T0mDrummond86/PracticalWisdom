@@ -8,3 +8,6 @@ tips.db
 
 # Local style-comparison samples (not part of the app)
 style_samples/
+
+# Nightly database backups — real user data, and this repo is public
+backups/

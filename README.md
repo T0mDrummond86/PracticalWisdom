@@ -47,7 +47,35 @@ COOKIE_SECURE=
 # Without it those buttons just say they're not configured; everything else works as normal.
 GROQ_API_KEY=
 # GROQ_MODEL=llama-3.3-70b-versatile        # optional: text-generation model override
+
+# Optional: AI illustrations for tips (one picture per tip, one consistent style).
+# Google Gemini is the preferred backend — fast (~10s/image) and ~$0.04 an image.
+# Get a key at https://aistudio.google.com/apikey
+GEMINI_API_KEY=
+# GEMINI_IMAGE_MODEL=gemini-2.5-flash-image  # optional model override
+# IMAGE_PROVIDER=gemini                      # force a backend (gemini | threedai)
+# THREEDAI_API_KEY=                          # legacy backend; heavily throttled and
+#                                            # ~30 credits an image — kept as a fallback
 ```
+
+### Tip illustrations
+
+Pictures are generated **offline** (never on a page request) and committed to
+`static/tip_images/<tip_id>.webp`, so a deploy carries them:
+
+```bash
+# one sample per style, to choose a look (5 images)
+python3 scripts/gen_style_samples.py
+
+# then the library — resumable, so re-running only pays for what's missing
+python3 scripts/gen_tip_images.py --export production_export.xlsx --style goldline
+python3 scripts/gen_tip_images.py --export ... --dry-run   # prompts only, no spend
+```
+
+Each tip's prompt is a fixed **style template** plus a one-line visual metaphor
+derived from the tip by the LLM (cached in `scripts/tip_concepts.json`, so re-runs are
+free). After deploying new pictures, an admin clicks **Tips & Tags Management →
+🖼 Sync tip pictures** to attach them to their tips.
 
 > **Embeddings** (semantic search, related-links, advice retrieval) have two backends:
 > - **Local model** (default): `fastembed` — no API key, fully private, downloads once (~130MB)
