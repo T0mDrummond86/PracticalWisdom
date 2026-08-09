@@ -664,13 +664,15 @@ def test_tip_image_generates_and_serves(client, app_module, monkeypatch, tmp_pat
         return b"RIFF0000WEBPfake"
 
     monkeypatch.setattr(app_module.imagegen, "generate", fake_generate)
-    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(tmp_path))
+    # Generated pictures are written to the persistent dir, and served via /tip-image/
+    # so a regenerated copy can take precedence over the one shipped in static/.
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
     tid = add_tip(app_module, "Measure what matters", ["achievement"])
     token = login_admin(client)
     r = client.post(f"/api/tips/{tid}/image", json={"style": "flat"},
                     headers={"X-CSRF-Token": token})
     assert r.status_code == 200
-    assert r.get_json()["image_url"] == f"/static/tip_images/{tid}.webp"
+    assert r.get_json()["image_url"] == f"/tip-image/{tid}.webp"
     # the style template was applied, and the tip's text became the concept
     assert seen["prompt"].startswith(imagegen.STYLE_TEMPLATES["flat"])
     assert "Measure what matters" in seen["prompt"]
@@ -744,6 +746,84 @@ def test_gemini_no_image_raises(monkeypatch):
 def test_tip_images_sync_requires_admin(client):
     assert client.post("/api/tips/images/sync",
                        headers={"X-CSRF-Token": get_csrf(client)}).status_code == 403
+
+
+def test_tip_image_custom_description(client, app_module, monkeypatch, tmp_path):
+    """An admin can describe exactly the picture they want; the style is still applied."""
+    import imagegen
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
+    seen = {}
+    monkeypatch.setattr(app_module.imagegen, "generate",
+                        lambda prompt, **kw: seen.setdefault("prompt", prompt) and b"" or b"IMG")
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image",
+                    json={"style": "goldline", "description": "a lighthouse on a cliff at night"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 200
+    assert "lighthouse on a cliff" in seen["prompt"]
+    assert seen["prompt"].startswith(imagegen.STYLE_TEMPLATES["goldline"])  # style preserved
+    assert (tmp_path / f"{tid}.webp").exists()
+
+
+def test_tip_image_modify_uses_existing_picture(client, app_module, monkeypatch, tmp_path):
+    """'Modify this picture' must EDIT the current image, not redraw from scratch."""
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(tmp_path))
+    seen = {}
+
+    def fake_edit(image_bytes, instruction, **kw):
+        seen["bytes"] = image_bytes
+        seen["instruction"] = instruction
+        return b"EDITED"
+
+    import pytest
+    monkeypatch.setattr(app_module.imagegen, "edit", fake_edit)
+    monkeypatch.setattr(app_module.imagegen, "generate",
+                        lambda *a, **k: pytest.fail("should edit, not regenerate"))
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    (tmp_path / f"{tid}.webp").write_bytes(b"ORIGINAL")
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (f"{tid}.webp", tid))
+        conn.commit()
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image", json={"instruction": "make the tree bigger"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 200
+    assert seen["bytes"] == b"ORIGINAL"          # the current picture was sent
+    assert "make the tree bigger" in seen["instruction"]
+    assert (tmp_path / f"{tid}.webp").read_bytes() == b"EDITED"
+
+
+def test_tip_image_modify_without_existing_picture(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
+    tid = add_tip(app_module, "Be patient", ["moral"])   # no picture
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image", json={"instruction": "make it bigger"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 400
+
+
+def test_regenerated_picture_survives_and_is_served(client, app_module, monkeypatch, tmp_path):
+    """A regenerated picture lives on the volume and wins over the shipped copy."""
+    shipped, volume = tmp_path / "shipped", tmp_path / "volume"
+    shipped.mkdir(); volume.mkdir()
+    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(shipped))
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(volume))
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    (shipped / f"{tid}.webp").write_bytes(b"SHIPPED")
+    token = login_admin(client)
+    client.post("/api/tips/images/sync", headers={"X-CSRF-Token": token})
+    assert client.get(f"/tip-image/{tid}.webp").data == b"SHIPPED"
+    # once regenerated, the volume copy is served instead
+    (volume / f"{tid}.webp").write_bytes(b"REGENERATED")
+    assert client.get(f"/tip-image/{tid}.webp").data == b"REGENERATED"
+    # and a later sync must not clear the pointer just because it isn't in static/
+    r = client.post("/api/tips/images/sync", headers={"X-CSRF-Token": token}).get_json()
+    assert r["cleared"] == 0
+    assert client.get("/api/tips").get_json()[0]["image_url"] == f"/tip-image/{tid}.webp"
 
 
 def test_tip_image_rejects_unknown_style(client, app_module, monkeypatch):

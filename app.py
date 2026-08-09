@@ -270,8 +270,9 @@ def tip_with_tags(conn, tip_id):
         "video_end": video_end,
         "video_embed": video_embed(video_url, video_start, video_end),
         "analysis": analysis,
-        # AI-generated illustration, if one has been made for this tip.
-        "image_url": ("/static/tip_images/" + tip["image_file"]) if tip["image_file"] else "",
+        # AI-generated illustration, if one has been made for this tip. Served through a
+        # route (not /static) so an admin-regenerated copy on the volume can win.
+        "image_url": ("/tip-image/" + tip["image_file"]) if tip["image_file"] else "",
     }
 
 
@@ -613,7 +614,31 @@ def set_tip_video(tip_id):
         return jsonify(tip_with_tags(conn, tip_id))
 
 
+# Pictures generated offline ship inside the repo…
 TIP_IMAGE_DIR = os.path.join(os.path.dirname(__file__), "static", "tip_images")
+# …but ones an admin regenerates on the live site must outlive the next deploy, so they
+# are written beside the database (i.e. onto the persistent volume) and take precedence.
+TIP_IMAGE_WRITE_DIR = os.environ.get("TIP_IMAGE_WRITE_DIR") or os.path.join(
+    os.path.dirname(os.path.abspath(DB)), "tip_images")
+
+
+def tip_image_path(fname):
+    """Where this picture actually lives — a regenerated copy wins over the shipped one."""
+    override = os.path.join(TIP_IMAGE_WRITE_DIR, fname)
+    return override if os.path.exists(override) else os.path.join(TIP_IMAGE_DIR, fname)
+
+
+@app.get("/tip-image/<path:fname>")
+def serve_tip_image(fname):
+    """Serve a tip picture, preferring an admin-regenerated version over the shipped one."""
+    if "/" in fname or "\\" in fname or not fname.endswith(".webp"):
+        return "Not found", 404
+    path = tip_image_path(fname)
+    if not os.path.exists(path):
+        return "Not found", 404
+    resp = send_file(path, mimetype="image/webp", conditional=True)
+    resp.headers["Cache-Control"] = "public, max-age=3600"   # short: these can be replaced
+    return resp
 
 
 @app.post("/api/tips/images/sync")
@@ -625,10 +650,14 @@ def sync_tip_images():
     production database still needs to know they exist — this scans the folder and
     points each tip at its file (and clears the pointer if a file has gone). Costs
     nothing; safe to re-run after every deploy that adds pictures."""
-    try:
-        files = {f for f in os.listdir(TIP_IMAGE_DIR) if f.endswith(".webp")}
-    except FileNotFoundError:
-        files = set()
+    # Both locations count: shipped pictures AND ones an admin regenerated on the volume
+    # (missing the latter would clear the pointer for every regenerated image).
+    files = set()
+    for d in (TIP_IMAGE_DIR, TIP_IMAGE_WRITE_DIR):
+        try:
+            files |= {f for f in os.listdir(d) if f.endswith(".webp")}
+        except FileNotFoundError:
+            pass
     linked = cleared = 0
     with get_db() as conn:
         for row in conn.execute("SELECT id, image_file FROM tips").fetchall():
@@ -646,29 +675,47 @@ def sync_tip_images():
 @app.post("/api/tips/<int:tip_id>/image")
 @admin_required
 def generate_tip_image(tip_id):
-    """(Re)generate this tip's illustration in the library's chosen style. Admin only.
+    """(Re)make this tip's illustration, keeping the library's style. Admin only.
 
-    Body: {"style": "<style key>", "concept": "<optional visual concept override>"}.
-    Costs credits on 3D AI Studio, so it is never triggered automatically — only by
-    an explicit admin action or the offline batch script."""
+    Two modes:
+      {"description": "..."}  draw a NEW picture of exactly what the admin describes
+      {"instruction": "..."}  MODIFY the current picture ("make the tree bigger"),
+                              which keeps the existing composition rather than redrawing
+      neither                 redraw from the tip's own words
+
+    Costs money per call, so it only ever runs on an explicit admin action."""
     if not imagegen.is_enabled():
-        return jsonify({"error": "Image generation isn't configured (set THREEDAI_API_KEY)."}), 503
+        return jsonify({"error": "Image generation isn't configured (set GEMINI_API_KEY)."}), 503
     data = request.get_json(force=True) or {}
-    style = (data.get("style") or os.environ.get("TIP_IMAGE_STYLE") or "").strip()
+    style = (data.get("style") or os.environ.get("TIP_IMAGE_STYLE") or "goldline").strip()
     if style not in imagegen.STYLE_TEMPLATES:
         return jsonify({"error": "Unknown image style."}), 400
+    instruction = (data.get("instruction") or "").strip()
+    description = (data.get("description") or data.get("concept") or "").strip()
+
     with get_db() as conn:
-        row = conn.execute("SELECT content, anecdote FROM tips WHERE id = ?", (tip_id,)).fetchone()
+        row = conn.execute(
+            "SELECT content, image_file FROM tips WHERE id = ?", (tip_id,)).fetchone()
         if not row:
             return jsonify({"error": "tip not found"}), 404
-    concept = (data.get("concept") or "").strip() or row["content"]
+
+    fname = "%d.webp" % tip_id
     try:
-        blob = imagegen.generate(imagegen.build_prompt(style, concept))
+        if instruction:
+            current = row["image_file"] and tip_image_path(row["image_file"])
+            if not current or not os.path.exists(current):
+                return jsonify({"error": "This tip has no picture to modify yet."}), 400
+            with open(current, "rb") as fh:
+                blob = imagegen.edit(fh.read(), instruction)
+        else:
+            blob = imagegen.generate(
+                imagegen.build_prompt(style, description or row["content"]))
     except imagegen.ImageGenError as e:
         return jsonify({"error": "Image generation failed: %s" % e}), 502
-    os.makedirs(TIP_IMAGE_DIR, exist_ok=True)
-    fname = "%d.webp" % tip_id
-    with open(os.path.join(TIP_IMAGE_DIR, fname), "wb") as fh:
+
+    # Write to the persistent location so a redeploy can't silently revert this.
+    os.makedirs(TIP_IMAGE_WRITE_DIR, exist_ok=True)
+    with open(os.path.join(TIP_IMAGE_WRITE_DIR, fname), "wb") as fh:
         fh.write(blob)
     with get_db() as conn:
         conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tip_id))

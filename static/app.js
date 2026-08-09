@@ -496,6 +496,7 @@
     renderTagPalette();
     $("save-status").textContent = "";
     renderVideoEditor(tip);   // the admin's attach-a-video field + preview
+    renderImageEditor(tip);      // the tip's picture + regenerate/modify controls
     renderAnalysisEditor(tip);   // the admin's "choose an angle" override text
     // highlight the matching card in the list (works for clicks and programmatic calls)
     document.querySelectorAll(".tip-card").forEach(c => {
@@ -589,6 +590,52 @@
     $("video-start-input").value = ""; $("video-end-input").value = "";
     $("video-save-btn").click();
   };
+
+  // ── Picture editor (detail pane, admin): redraw or tweak a tip's illustration ──
+  function renderImageEditor(tip) {
+    const box = $("tip-image-preview");
+    // Cache-bust so a freshly regenerated picture replaces the old one on screen.
+    box.innerHTML = tip.image_url
+      ? `<img class="tip-image" src="${escHtml(tip.image_url)}?t=${Date.now()}" alt="">`
+      : `<div class="image-editor-empty">No picture yet.</div>`;
+    $("image-instruction").value = "";
+    $("image-editor-status").textContent = "";
+    // You can only modify a picture that exists.
+    $("image-modify-btn").disabled = !tip.image_url;
+  }
+
+  async function remakeTipImage(mode) {
+    if (!selectedTip) return;
+    const text = $("image-instruction").value.trim();
+    const status = $("image-editor-status");
+    if (!text && mode === "modify") {
+      status.style.color = "var(--danger)";
+      status.textContent = "Say what to change first.";
+      return;
+    }
+    const buttons = [$("image-modify-btn"), $("image-new-btn")];
+    buttons.forEach(b => b.disabled = true);
+    status.style.color = "var(--text-secondary)";
+    status.innerHTML = `<div class="advise-thinking">${SPINNER}<span>${
+      mode === "modify" ? "Changing the picture…" : "Drawing a new picture…"}</span></div>`;
+    const body = mode === "modify" ? { instruction: text } : { description: text };
+    const r = await api("POST", `/api/tips/${selectedTip.id}/image`, body);
+    buttons.forEach(b => b.disabled = false);
+    if (r.error) {
+      status.style.color = "var(--danger)";
+      status.textContent = r.error;
+      $("image-modify-btn").disabled = !selectedTip.image_url;
+      return;
+    }
+    selectedTip = r;
+    renderImageEditor(r);
+    status.style.color = "var(--accent)";
+    status.textContent = mode === "modify" ? "Picture updated." : "New picture created.";
+    loadTips(activeTags.join(","));   // refresh cards so the new picture shows everywhere
+  }
+
+  $("image-modify-btn").onclick = () => remakeTipImage("modify");
+  $("image-new-btn").onclick = () => remakeTipImage("new");
 
   // ── "Choose an angle" overrides: admin-written text per lens (detail pane, List view) ──
   // Order + labels mirror the #analysis-options buttons in the reader's analysis pane.
