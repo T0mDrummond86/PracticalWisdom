@@ -478,6 +478,23 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .analysis-opt.has-custom::after { content: "•"; color: var(--gold); margin-left: 6px; font-weight: 700; }
 .analysis-custom { font-size: 0.9rem; line-height: 1.6; color: var(--text); white-space: pre-wrap; }
 
+/* ── Picture editor (detail pane, admin) ── */
+#image-editor { display: flex; flex-direction: column; gap: 9px; }
+#tip-image-preview .tip-image { width: 100%; height: auto; border-radius: var(--r-md); }
+.image-editor-empty {
+  font-size: 0.82rem; color: var(--text-tertiary); font-style: italic;
+  background: var(--input-bg); border-radius: var(--r-md); padding: 18px; text-align: center;
+}
+#image-editor-note { font-size: 0.78rem; color: var(--text-tertiary); line-height: 1.5; margin: -2px 0 2px; }
+#image-instruction {
+  min-height: 56px; resize: vertical; font-family: inherit; font-size: 0.88rem; line-height: 1.5;
+  background: var(--input-bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 8px 10px;
+}
+#image-instruction:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-wash); }
+#image-editor-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+#image-editor-status { font-size: 0.8rem; min-height: 1em; }
+
 /* ── "Choose an angle" override editor (detail pane, admin) ── */
 #analysis-editor { display: flex; flex-direction: column; gap: 9px; }
 #analysis-editor-note { font-size: 0.78rem; color: var(--text-tertiary); line-height: 1.5; margin: -2px 0 2px; }

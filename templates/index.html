@@ -205,6 +205,17 @@
       <div id="video-preview"></div>
       <button class="btn secondary" id="video-remove-btn" style="display:none">Remove video</button>
     </div>
+    <div id="image-editor">
+      <h2>Picture</h2>
+      <div id="tip-image-preview"></div>
+      <p id="image-editor-note">Describe the picture you want, or how to change the one above. Either way it keeps the library's style.</p>
+      <textarea id="image-instruction" placeholder="e.g. a lighthouse on a cliff at night — or — make the tree bigger and add a moon"></textarea>
+      <div id="image-editor-actions">
+        <button class="btn secondary" id="image-modify-btn" title="Change the current picture, keeping its composition">✎ Modify this picture</button>
+        <button class="btn secondary" id="image-new-btn" title="Draw a brand-new picture from your description">✨ Draw a new picture</button>
+      </div>
+      <div id="image-editor-status"></div>
+    </div>
     <div id="analysis-editor">
       <h2>“Choose an angle” — your own text (optional)</h2>
       <p id="analysis-editor-note">Write your own text for any angle. When set, readers see it in the Favorites “Explore this tip” pane instead of AI-generated analysis. Leave an angle blank to keep it AI-generated.</p>
@@ -579,6 +590,7 @@
         <li><strong>List view</strong> — the admin-only view for browsing and editing every tip.</li>
         <li><strong>Editing a tip</strong> — click a tip in List view to open it. Edit its wording and anecdote, attach a <em>video</em> (with optional start/stop times), write your own <em>“choose an angle”</em> text, and manage its tags. Click <strong>Save</strong> to store everything at once.</li>
         <li><strong>“Choose an angle” text</strong> — anything you write here is shown to readers in the Favorites “Explore this tip” pane instead of AI-generated text. Leave a box blank to keep that angle AI-generated.</li>
+        <li><strong>Picture</strong> — every tip has an illustration in one shared style. In the tip editor you can either <em>✎ Modify this picture</em> (describe a change, e.g. “add a moon” — the rest of the picture stays as it is) or <em>✨ Draw a new picture</em> (describe the picture you want from scratch). Both keep the library's style, and each one costs a few cents.</li>
         <li><strong>Tips &amp; Tags Management</strong> menu (top right when in List view):
           <ul>
             <li><em>Add Tip</em> — create a single tip.</li>

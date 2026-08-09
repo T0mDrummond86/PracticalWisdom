@@ -271,6 +271,45 @@ def _gemini_generate(prompt, aspect_ratio="4:3", max_retries=5, on_wait=None):
     raise ImageGenError("Gemini still unavailable after %d attempts" % max_retries)
 
 
+def edit(image_bytes, instruction, webp=True, mime="image/webp"):
+    """Modify an EXISTING picture from a plain-language instruction (Gemini only).
+
+    Sending the current image alongside the instruction keeps composition and style
+    intact, which is what "make the tree bigger" should do — a fresh text-to-image
+    generation would redraw the whole thing instead.
+    """
+    if provider() != "gemini":
+        raise ImageGenError("editing an existing picture needs the Gemini backend "
+                            "(set GEMINI_API_KEY)")
+    key = gemini_key()
+    url = "%s/models/%s:generateContent" % (GEMINI_BASE, GEMINI_MODEL)
+    guard = (" Keep the existing art style exactly: the same palette, line quality and "
+             "background. No text, no words, no lettering.")
+    payload = {"contents": [{"parts": [
+        {"inline_data": {"mime_type": mime,
+                         "data": base64.b64encode(image_bytes).decode()}},
+        {"text": instruction.strip() + guard},
+    ]}]}
+    try:
+        r = requests.post(url, timeout=180,
+                          headers={"x-goog-api-key": key, "Content-Type": "application/json"},
+                          json=payload)
+    except requests.RequestException as e:
+        raise ImageGenError("request failed: %s" % e)
+    if r.status_code != 200:
+        raise ImageGenError("Gemini API %s: %s" % (r.status_code, r.text[:300]))
+    try:
+        parts = r.json()["candidates"][0]["content"]["parts"]
+    except (ValueError, KeyError, IndexError) as e:
+        raise ImageGenError("unexpected Gemini response: %s" % e)
+    for p in parts:
+        inline = p.get("inlineData") or p.get("inline_data")
+        if inline and inline.get("data"):
+            blob = base64.b64decode(inline["data"])
+            return to_webp(blob) if webp else blob
+    raise ImageGenError("Gemini returned no image (it may have refused the instruction)")
+
+
 def generate(prompt, webp=True, aspect_ratio="4:3", resolution="1K",
              max_retries=8, on_wait=None):
     """Make one image with whichever backend is configured. Returns WebP bytes."""
