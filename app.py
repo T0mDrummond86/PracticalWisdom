@@ -1202,6 +1202,9 @@ def api_me():
                 "SELECT COUNT(*) AS n FROM tip_submissions WHERE status = 'pending'").fetchone()["n"]
     return jsonify({"user": user, "auth_enabled": AUTH_ENABLED, "is_admin": is_admin(),
                     "llm_enabled": llm.is_enabled(), "embeddings_enabled": embeddings.is_enabled(),
+                    # So the picture buttons can say WHY they're unavailable instead of
+                    # failing after a click — and so config problems are diagnosable.
+                    "images_enabled": imagegen.is_enabled(),
                     "pending_submissions": pending_submissions, "csrf_token": csrf_token()})
 
 

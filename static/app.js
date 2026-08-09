@@ -11,6 +11,7 @@
   let isAdmin = false;       // administrator session (unlocks List view + management)
   let embeddingsEnabled = false; // whether semantic features (search/recommender) are available
   let llmEnabled = false;    // whether text-generation features (tags/advice) are available
+  let imagesEnabled = false; // whether tip-picture generation is configured on the server
   let pendingCount = 0;      // submissions awaiting review (admins only)
   let searchActive = false;  // showing semantic-search results instead of the current view
   let lastSearch = { q: "", results: [] };
@@ -73,6 +74,7 @@
     isAdmin = data.is_admin;
     embeddingsEnabled = !!data.embeddings_enabled;
     llmEnabled = !!data.llm_enabled;
+    imagesEnabled = !!data.images_enabled;
     pendingCount = data.pending_submissions || 0;
     updateSearchModeUI();
     const ab = $("view-advise");
@@ -599,7 +601,18 @@
       ? `<img class="tip-image" src="${escHtml(tip.image_url)}?t=${Date.now()}" alt="">`
       : `<div class="image-editor-empty">No picture yet.</div>`;
     $("image-instruction").value = "";
-    $("image-editor-status").textContent = "";
+    const status = $("image-editor-status");
+    status.textContent = "";
+    // Say up front when the server can't make pictures, rather than failing on click.
+    if (!imagesEnabled) {
+      $("image-modify-btn").disabled = true;
+      $("image-new-btn").disabled = true;
+      status.style.color = "var(--text-tertiary)";
+      status.textContent = "Picture generation isn't switched on for this site "
+        + "(the server needs a GEMINI_API_KEY).";
+      return;
+    }
+    $("image-new-btn").disabled = false;
     // You can only modify a picture that exists.
     $("image-modify-btn").disabled = !tip.image_url;
   }
