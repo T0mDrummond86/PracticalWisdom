@@ -826,6 +826,65 @@ def test_regenerated_picture_survives_and_is_served(client, app_module, monkeypa
     assert client.get("/api/tips").get_json()[0]["image_url"] == f"/tip-image/{tid}.webp"
 
 
+def test_tip_image_upload(client, app_module, monkeypatch, tmp_path):
+    """An admin can supply their own picture; it is re-encoded to WebP on the volume."""
+    from io import BytesIO
+    from PIL import Image
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    buf = BytesIO()
+    Image.new("RGB", (1600, 900), (10, 20, 40)).save(buf, format="PNG")
+    buf.seek(0)
+    r = client.post(f"/api/tips/{tid}/image/upload",
+                    data={"file": (buf, "mine.png")},
+                    headers={"X-CSRF-Token": token}, content_type="multipart/form-data")
+    assert r.status_code == 200
+    assert r.get_json()["image_url"] == f"/tip-image/{tid}.webp"
+    out = tmp_path / f"{tid}.webp"
+    assert out.exists()
+    im = Image.open(out)
+    assert im.format == "WEBP"        # converted, whatever was uploaded
+    assert im.width <= 1000           # and resized to the library's size
+
+
+def test_tip_image_upload_rejects_non_image(client, app_module, monkeypatch, tmp_path):
+    """A file that isn't an image must be refused, not written to disk."""
+    from io import BytesIO
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    r = client.post(f"/api/tips/{tid}/image/upload",
+                    data={"file": (BytesIO(b"#!/bin/sh\nrm -rf /"), "evil.sh")},
+                    headers={"X-CSRF-Token": token}, content_type="multipart/form-data")
+    assert r.status_code == 400
+    assert not (tmp_path / f"{tid}.webp").exists()
+
+
+def test_tip_image_upload_requires_admin(client, app_module):
+    from io import BytesIO
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    r = client.post(f"/api/tips/{tid}/image/upload",
+                    data={"file": (BytesIO(b"x"), "a.png")},
+                    headers={"X-CSRF-Token": get_csrf(client)},
+                    content_type="multipart/form-data")
+    assert r.status_code == 403
+
+
+def test_tip_image_upload_works_without_ai_key(client, app_module, monkeypatch, tmp_path):
+    """Uploading needs no AI backend — it must work when generation is switched off."""
+    from io import BytesIO
+    from PIL import Image
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: False)
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Be patient", ["moral"])
+    token = login_admin(client)
+    buf = BytesIO(); Image.new("RGB", (40, 30)).save(buf, format="PNG"); buf.seek(0)
+    r = client.post(f"/api/tips/{tid}/image/upload", data={"file": (buf, "m.png")},
+                    headers={"X-CSRF-Token": token}, content_type="multipart/form-data")
+    assert r.status_code == 200
+
+
 def test_tip_image_rejects_unknown_style(client, app_module, monkeypatch):
     monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
     tid = add_tip(app_module, "Be patient", ["moral"])

@@ -723,6 +723,45 @@ def generate_tip_image(tip_id):
         return jsonify(tip_with_tags(conn, tip_id))
 
 
+MAX_UPLOAD_BYTES = 12 * 1024 * 1024   # generous for a phone photo, small enough to be safe
+
+
+@app.post("/api/tips/<int:tip_id>/image/upload")
+@admin_required
+def upload_tip_image(tip_id):
+    """Use your own picture for a tip instead of a generated one. Admin only.
+
+    Needs no AI key at all, so it works even when image generation is switched off.
+    Whatever is uploaded is re-encoded to WebP at the library's size, which both keeps
+    the repo/volume small and guarantees the stored file really is an image."""
+    upload = request.files.get("file")
+    if not upload:
+        return jsonify({"error": "No file uploaded."}), 400
+    blob = upload.read(MAX_UPLOAD_BYTES + 1)
+    if len(blob) > MAX_UPLOAD_BYTES:
+        return jsonify({"error": "That image is too large (max 12MB)."}), 400
+    if not blob:
+        return jsonify({"error": "That file is empty."}), 400
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM tips WHERE id = ?", (tip_id,)).fetchone():
+            return jsonify({"error": "tip not found"}), 404
+    try:
+        # Re-encoding through Pillow is also the validation: anything that isn't a real
+        # image fails here rather than being written to disk.
+        webp = imagegen.to_webp(blob)
+    except Exception:
+        return jsonify({"error": "That doesn't look like an image file "
+                                 "(try a JPG, PNG or WebP)."}), 400
+    fname = "%d.webp" % tip_id
+    os.makedirs(TIP_IMAGE_WRITE_DIR, exist_ok=True)
+    with open(os.path.join(TIP_IMAGE_WRITE_DIR, fname), "wb") as fh:
+        fh.write(webp)
+    with get_db() as conn:
+        conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tip_id))
+        conn.commit()
+        return jsonify(tip_with_tags(conn, tip_id))
+
+
 @app.delete("/api/tips/<int:tip_id>")
 @admin_required
 def delete_tip(tip_id):
