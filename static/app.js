@@ -608,8 +608,8 @@
       $("image-modify-btn").disabled = true;
       $("image-new-btn").disabled = true;
       status.style.color = "var(--text-tertiary)";
-      status.textContent = "Picture generation isn't switched on for this site "
-        + "(the server needs a GEMINI_API_KEY).";
+      status.textContent = "AI picture generation isn't switched on for this site "
+        + "(the server needs a GEMINI_API_KEY) — you can still upload your own.";
       return;
     }
     $("image-new-btn").disabled = false;
@@ -649,6 +649,41 @@
 
   $("image-modify-btn").onclick = () => remakeTipImage("modify");
   $("image-new-btn").onclick = () => remakeTipImage("new");
+
+  // Upload your own picture instead of generating one. Needs no AI key, so this
+  // works even when picture generation is switched off on the server.
+  $("image-upload-btn").onclick = () => $("image-upload-file").click();
+  $("image-upload-file").onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !selectedTip) return;
+    e.target.value = "";                      // let the same file be picked again later
+    const status = $("image-editor-status");
+    status.style.color = "var(--text-secondary)";
+    status.innerHTML = `<div class="advise-thinking">${SPINNER}<span>Uploading…</span></div>`;
+    const fd = new FormData();
+    fd.append("file", file);
+    let res;
+    try {
+      const r = await fetch(`/api/tips/${selectedTip.id}/image/upload`, {
+        method: "POST", body: fd, headers: { "X-CSRF-Token": csrfToken },
+      });
+      res = await r.json();
+    } catch (err) {
+      status.style.color = "var(--danger)";
+      status.textContent = "Couldn't reach the server — try again.";
+      return;
+    }
+    if (res.error) {
+      status.style.color = "var(--danger)";
+      status.textContent = res.error;
+      return;
+    }
+    selectedTip = res;
+    renderImageEditor(res);
+    status.style.color = "var(--accent)";
+    status.textContent = "Picture uploaded.";
+    loadTips(activeTags.join(","));           // refresh cards so it shows everywhere
+  };
 
   // ── "Choose an angle" overrides: admin-written text per lens (detail pane, List view) ──
   // Order + labels mirror the #analysis-options buttons in the reader's analysis pane.
