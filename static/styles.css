@@ -960,6 +960,79 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 #net-card-actions .fav-btn.on { color: #ffcf33; }
 #net-card-actions .fav-count { color: #e7eef6; }
 
+
+/* ══ Entrance motion ══════════════════════════════════════════════════════════
+   The app had no entrance animation at all — content appeared instantly via
+   display toggles and innerHTML swaps. These are all ENTER-only and short; the
+   prefers-reduced-motion block collapses them to nothing.
+   NB: none of these use animation-fill-mode: forwards, so the resting state stays
+   whatever CSS says (important for .net-node.dim, which owns opacity afterwards). */
+@keyframes pw-fade-in   { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pw-fade-up   { from { opacity: 0; transform: translateY(8px); }
+                          to   { opacity: 1; transform: none; } }
+@keyframes pw-in-right  { from { opacity: 0; transform: translateX(26px); }
+                          to   { opacity: 1; transform: none; } }
+@keyframes pw-in-left   { from { opacity: 0; transform: translateX(-26px); }
+                          to   { opacity: 1; transform: none; } }
+@keyframes pw-modal-in  { from { opacity: 0; transform: translateY(10px) scale(0.985); }
+                          to   { opacity: 1; transform: none; } }
+@keyframes pw-pop       { 0% { transform: scale(1); } 45% { transform: scale(1.32); }
+                          100% { transform: scale(1); } }
+
+/* 1. Cards view — a tip arrives from the direction you travelled. */
+#cv-card.enter-next { animation: pw-in-right var(--motion) var(--ease); }
+#cv-card.enter-back { animation: pw-in-left  var(--motion) var(--ease); }
+
+/* 2. Pictures fade in as they load, instead of popping the card open. */
+.tip-image { opacity: 0; transition: opacity var(--motion) var(--ease); }
+.tip-image.loaded { opacity: 1; }
+
+/* 3. Saving a tip — the app's key action — gets a tactile confirmation. */
+.fav-btn.pop { animation: pw-pop 340ms var(--ease); }
+
+/* 4. Generated text lands rather than snapping in. */
+.reveal { animation: pw-fade-up var(--motion) var(--ease); }
+
+/* 5. Modals: the backdrop fades, the panel rises slightly. */
+.overlay:not(.hidden) { animation: pw-fade-in var(--motion-fast) var(--ease); }
+.overlay:not(.hidden) > .modal { animation: pw-modal-in var(--motion) var(--ease); }
+
+/* 6. Side panes slide in from the edge they live on. */
+#detail-pane:not(.hidden), #analysis-pane:not(.hidden) {
+  animation: pw-in-right var(--motion) var(--ease);
+}
+
+/* 7. Lists reveal in sequence — soft depth's signature. Capped at 8 so a long
+      list never feels like it's waiting on an animation. */
+#search-results .tip-card, #fav-list .tip-card, #journal-list .journal-entry {
+  animation: pw-fade-up var(--motion) var(--ease) both;
+}
+#search-results .tip-card:nth-child(1), #fav-list .tip-card:nth-child(1),
+#journal-list .journal-entry:nth-child(1) { animation-delay: 0ms; }
+#search-results .tip-card:nth-child(2), #fav-list .tip-card:nth-child(2),
+#journal-list .journal-entry:nth-child(2) { animation-delay: 35ms; }
+#search-results .tip-card:nth-child(3), #fav-list .tip-card:nth-child(3),
+#journal-list .journal-entry:nth-child(3) { animation-delay: 70ms; }
+#search-results .tip-card:nth-child(4), #fav-list .tip-card:nth-child(4),
+#journal-list .journal-entry:nth-child(4) { animation-delay: 105ms; }
+#search-results .tip-card:nth-child(5), #fav-list .tip-card:nth-child(5),
+#journal-list .journal-entry:nth-child(5) { animation-delay: 140ms; }
+#search-results .tip-card:nth-child(6), #fav-list .tip-card:nth-child(6),
+#journal-list .journal-entry:nth-child(6) { animation-delay: 175ms; }
+#search-results .tip-card:nth-child(7), #fav-list .tip-card:nth-child(7),
+#journal-list .journal-entry:nth-child(7) { animation-delay: 210ms; }
+#search-results .tip-card:nth-child(n+8), #fav-list .tip-card:nth-child(n+8),
+#journal-list .journal-entry:nth-child(n+8) { animation-delay: 240ms; }
+
+/* 8. The map fades in as a whole when it's drawn or revealed.
+      Deliberately on the GROUP, not per node: individual nodes own their opacity
+      via .dim for link highlighting, and a per-node entrance both fought that and
+      left 200+ elements holding an animation class that never cleaned up while the
+      group was hidden (the phone's bubble overview hides it). One fade, no state. */
+#net-svg > g > g:not(:empty) { animation: pw-fade-in var(--motion) var(--ease); }
+
+/* ══ end entrance motion ══ */
+
 /* ── Toast ── */
 #toast {
   position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(20px);

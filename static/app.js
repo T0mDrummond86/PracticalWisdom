@@ -284,15 +284,18 @@
   function bindTipControls(scope, tip, after) {
     const heart = scope.querySelector(".fav-btn");
     const count = scope.querySelector(".fav-count");
-    const paint = () => {
+    const paint = (justSaved) => {
       if (heart) {
         heart.classList.toggle("on", tip.my_vote === 1);
+        if (justSaved && tip.my_vote === 1) {     // confirm the save with a small pop
+          heart.classList.remove("pop"); void heart.offsetWidth; heart.classList.add("pop");
+        }
         heart.textContent = tip.my_vote === 1 ? "♥" : "♡";
         heart.title = tip.my_vote === 1 ? "Remove from favourites" : "Save to favourites";
       }
       if (count) count.textContent = tip.score > 0 ? tip.score : "";
     };
-    if (heart) heart.onclick = async e => { e.stopPropagation(); if (await doVote(tip, 1)) { paint(); after && after(); } };
+    if (heart) heart.onclick = async e => { e.stopPropagation(); if (await doVote(tip, 1)) { paint(true); after && after(); } };
   }
 
   // The favourite control: one heart + how many people saved the tip (blank when zero).
@@ -512,6 +515,29 @@
       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
       allowfullscreen></iframe></div>`;
   }
+
+  // Pictures start transparent (see .tip-image in the CSS) and fade in when they
+  // actually finish loading, so a card doesn't visibly reassemble itself. A single
+  // observer covers every render path rather than each one remembering to opt in —
+  // and an error still marks the image "loaded" so nothing is left invisible.
+  function markImageLoaded(img) {
+    if (img.dataset.fadeWired) return;
+    img.dataset.fadeWired = "1";
+    if (img.complete && img.naturalWidth) { img.classList.add("loaded"); return; }
+    const done = () => img.classList.add("loaded");
+    img.addEventListener("load", done, { once: true });
+    img.addEventListener("error", done, { once: true });
+  }
+  function wireImageFades(root) {
+    (root || document).querySelectorAll("img.tip-image").forEach(markImageLoaded);
+  }
+  new MutationObserver(muts => {
+    for (const m of muts) for (const n of m.addedNodes) {
+      if (n.nodeType !== 1) continue;
+      if (n.matches && n.matches("img.tip-image")) markImageLoaded(n);
+      else wireImageFades(n);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
 
   // A tip's AI illustration, when it has one. Rendered above the text in every view;
   // silently absent otherwise, so tips without a picture look exactly as before.
@@ -2355,6 +2381,8 @@
     showCardTip(start.id);
   }
 
+  let cardEnterDir = "next";   // which way the reader moved, for the entrance animation
+
   function showCardTip(id) {
     cardCurrent = id;
     NET.selected = id;
@@ -2383,6 +2411,11 @@
   }
 
   function renderCard(tip) {
+    // Replay the entrance so the tip arrives from the direction of travel.
+    const card = $("cv-card");
+    card.classList.remove("enter-next", "enter-back");
+    void card.offsetWidth;                       // restart the animation
+    card.classList.add(cardEnterDir === "back" ? "enter-back" : "enter-next");
     $("cv-content").textContent = tip.content;
     $("cv-anecdote").textContent = tip.anecdote || "";
     renderTipImage("cv-image", tip);    // the tip's illustration, if it has one
@@ -2406,12 +2439,14 @@
 
   function cardNext() {
     if (cardNextId == null) return;
+    cardEnterDir = "next";
     cardBackStack.push(cardCurrent);
     NET.prevSelected = cardCurrent;
     showCardTip(cardNextId);
   }
   function cardPrev() {
     if (!cardBackStack.length) return;
+    cardEnterDir = "back";
     const prev = cardBackStack.pop();
     NET.prevSelected = cardBackStack.length ? cardBackStack[cardBackStack.length - 1] : null;
     showCardTip(prev);
@@ -2700,12 +2735,12 @@
     const res = await api("POST", `/api/tips/${selectedFav.id}/analyze`, { lens });
     if (res.error) { out.innerHTML = heading + ERR(res.error); return; }
     if (res.custom) {   // admin-written text — show it verbatim, no AI generation
-      out.innerHTML = heading + `<div class="analysis-custom">${escHtml(res.text || "").replace(/\n/g, "<br>")}</div>`;
+      out.innerHTML = heading + `<div class="analysis-custom reveal">${escHtml(res.text || "").replace(/\n/g, "<br>")}</div>`;
       return;
     }
     const points = res.points || [];
     out.innerHTML = heading + (points.length
-      ? `<ul class="analysis-list">${points.map(p => `<li>${escHtml(p)}</li>`).join("")}</ul>`
+      ? `<ul class="analysis-list reveal">${points.map(p => `<li>${escHtml(p)}</li>`).join("")}</ul>`
       : `<div class="analysis-hint">No analysis came back — try another angle.</div>`);
   }
 
@@ -2831,7 +2866,7 @@
     const drawn = tips.filter(t => used.has(t.id));
     const list = drawn.length ? drawn : tips;
     out.innerHTML =
-      `<div class="advise-answer">${escHtml(res.answer || "").replace(/\n/g, "<br>")}</div>` +
+      `<div class="advise-answer reveal">${escHtml(res.answer || "").replace(/\n/g, "<br>")}</div>` +
       (list.length ? `<div class="advise-source-label">Drawn from these tips</div><div class="advise-tips"></div>` : "");
     const wrap = out.querySelector(".advise-tips");
     if (!wrap) return;
@@ -2880,7 +2915,7 @@
     const experiments = (ins.experiments || []).map(x => `<li>${escHtml(x)}</li>`).join("");
     $("insights-body").innerHTML =
       `<div class="insights-count">From the ${count} tip${count !== 1 ? "s" : ""} you chose out of the whole library</div>` +
-      (ins.pattern ? `<div class="advise-answer">${escHtml(ins.pattern).replace(/\n/g, "<br>")}</div>` : "") +
+      (ins.pattern ? `<div class="advise-answer reveal">${escHtml(ins.pattern).replace(/\n/g, "<br>")}</div>` : "") +
       (questions ? `<div class="insights-label">Questions to sit with</div><ul class="insights-list">${questions}</ul>` : "") +
       (experiments ? `<div class="insights-label">Experiments to try this week</div><ul class="insights-list">${experiments}</ul>` : "");
   }
@@ -3373,7 +3408,7 @@
     const r = await api("POST", "/api/journal/weekly-review");
     $("week-body").innerHTML = r.error
       ? ERR(r.error)
-      : `<div class="advise-answer">${escHtml(r.review || "").replace(/\n/g, "<br>")}</div>`;
+      : `<div class="advise-answer reveal">${escHtml(r.review || "").replace(/\n/g, "<br>")}</div>`;
   }
   $("week-close").onclick = () => $("week-overlay").classList.add("hidden");
   dismissOnBackdrop("week-overlay");
