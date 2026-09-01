@@ -6,11 +6,11 @@
  *     so the UI always loads with no connection.
  *   - /api/ requests are network-first, falling back to any cached copy, then to a
  *     small "offline" JSON response.
- *   - Google Fonts (cross-origin) and other /static/ assets are cached at runtime.
+ *   - Other /static/ assets are cached at runtime.
  *
  * Bump CACHE when you ship new shell assets — the old cache is purged on activate.
  */
-const CACHE = "pw-cache-v19";
+const CACHE = "pw-cache-v20";
 
 // ── Daily-tip notifications ──
 self.addEventListener("push", (event) => {
@@ -39,6 +39,7 @@ self.addEventListener("notificationclick", (event) => {
 const SHELL = [
   "/",
   "/static/styles.css",
+  "/static/fonts/fraunces-600-latin.woff2",
   "/static/app.js",
   "/static/favicon.svg",
   "/static/manifest.json",
@@ -103,15 +104,14 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Everything else (static assets + Google Fonts) → cache-first, fill cache on miss.
+  // Everything else (/static/ assets) → cache-first, fill cache on miss.
   event.respondWith((async () => {
     const cached = await caches.match(req);
     if (cached) return cached;
     try {
       const res = await fetch(req);
-      const isFont = url.hostname.endsWith("fonts.googleapis.com") || url.hostname.endsWith("fonts.gstatic.com");
       const isStatic = url.origin === self.location.origin && url.pathname.startsWith("/static/");
-      if ((isFont || isStatic) && (res.ok || res.type === "opaque")) {
+      if (isStatic && res.ok) {
         const cache = await caches.open(CACHE);
         cache.put(req, res.clone());
       }
