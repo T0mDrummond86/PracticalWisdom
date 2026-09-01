@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "tips",
-      "runtimeExecutable": "python3",
+      "runtimeExecutable": "/usr/bin/python3",
       "runtimeArgs": ["/Users/tomdrummond/Documents/apps/PracticalWisdom/app.py"],
       "port": 5001
     }

@@ -23,9 +23,6 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Practical Wisdom">
 <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/apple-touch-icon.png') }}">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
@@ -51,7 +48,7 @@
 
   <div id="tip-panel">
     <div id="search-bar">
-      <button class="btn secondary" id="sidebar-toggle" aria-label="Filter by tag">☰ Filter</button>
+      <button class="btn secondary" id="sidebar-toggle" aria-label="Filter by tag">Filter</button>
       <div id="view-toggle">
         <button class="view-btn active" id="view-list">List</button>
         <button class="view-btn" id="view-network">Network</button>
@@ -81,17 +78,17 @@
           <button class="btn secondary" id="apply-tag-btn">Apply a tag to tips</button>
           <button class="btn secondary" id="manage-tags-btn">Delete tags</button>
           <button class="btn secondary" id="review-subs-btn">Review submissions</button>
-          <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">✨ Rebuild semantic index</button>
-          <button class="btn secondary" id="manage-paths-btn">🧭 Curated paths</button>
-          <button class="btn secondary" id="usage-stats-btn">📈 Usage stats</button>
-          <button class="btn secondary" id="sync-images-btn" title="Attach newly deployed tip pictures to their tips">🖼 Sync tip pictures</button>
+          <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">Rebuild semantic index</button>
+          <button class="btn secondary" id="manage-paths-btn">Curated paths</button>
+          <button class="btn secondary" id="usage-stats-btn">Usage stats</button>
+          <button class="btn secondary" id="sync-images-btn" title="Attach newly deployed tip pictures to their tips">Sync tip pictures</button>
           <div class="mgmt-sep"></div>
-          <button class="btn secondary" id="export-xlsx-btn">⤓ Export all tips (Excel)</button>
-          <button class="btn secondary" id="import-xlsx-btn">⤒ Import tips from Excel…</button>
+          <button class="btn secondary" id="export-xlsx-btn">Export all tips (Excel)</button>
+          <button class="btn secondary" id="import-xlsx-btn">Import tips from Excel…</button>
           <input id="import-xlsx-file" type="file" accept=".xlsx" hidden>
           <div class="mgmt-sep"></div>
-          <button class="btn secondary mgmt-danger" id="clear-tips-btn">🗑 Clear all tips…</button>
-          <button class="btn secondary mgmt-danger" id="clear-all-tags-btn">🗑 Clear all tags…</button>
+          <button class="btn secondary mgmt-danger" id="clear-tips-btn">Clear all tips…</button>
+          <button class="btn secondary mgmt-danger" id="clear-all-tags-btn">Clear all tags…</button>
         </div>
       </div>
       </div>
@@ -105,7 +102,7 @@
       <div id="net-loading" class="hidden"><div class="spinner"></div></div>
       <div id="net-legend"></div>
       <div id="net-controls">
-        <button class="net-ghost-btn" id="net-fullscreen" title="View the network full screen">⛶ Full screen</button>
+        <button class="net-ghost-btn" id="net-fullscreen" title="View the network full screen">Full screen</button>
         <button class="net-ghost-btn" id="net-reset">Reset view</button>
         <button class="net-ghost-btn" id="net-relayout">Re-layout</button>
         <button class="net-ghost-btn" id="net-clear-history" title="Forget which tips you've visited and re-explore from scratch">Clear history</button>
@@ -122,7 +119,7 @@
         <div id="net-card-linkmode" style="display:none">
           <span class="net-linkmode-label">Links by</span>
           <button class="net-seg" id="linkmode-tags">Tags</button>
-          <button class="net-seg" id="linkmode-related">Meaning ✨</button>
+          <button class="net-seg" id="linkmode-related">Meaning</button>
         </div>
         <button class="net-refine-toggle" id="net-refine-toggle" aria-expanded="false">Refine links by tag…</button>
         <div class="net-card-tags-label" id="net-card-tags-label">Click tags to include/leave out · OR/AND to combine</div>
@@ -149,8 +146,8 @@
         </div>
         <div id="cv-swipe-hint">← swipe to skip · swipe to save →</div>
         <div id="cv-foot">
-          <button class="btn secondary" id="cv-restart">↻ Start over</button>
-          <button class="btn secondary" id="cv-change-course" aria-expanded="false">⤳ Change course</button>
+          <button class="btn secondary" id="cv-restart">Start over</button>
+          <button class="btn secondary" id="cv-change-course" aria-expanded="false">Change course</button>
           <button class="btn secondary" id="cv-suggest-mode" style="display:none" title="How the next tip is chosen: by shared tags, or by meaning"></button>
         </div>
         <div id="cv-redirect" class="hidden">
@@ -211,9 +208,9 @@
       <p id="image-editor-note">Describe the picture you want, or how to change the one above. Either way it keeps the library's style.</p>
       <textarea id="image-instruction" placeholder="e.g. a lighthouse on a cliff at night — or — make the tree bigger and add a moon"></textarea>
       <div id="image-editor-actions">
-        <button class="btn secondary" id="image-modify-btn" title="Change the current picture, keeping its composition">✎ Modify this picture</button>
-        <button class="btn secondary" id="image-new-btn" title="Draw a brand-new picture from your description">✨ Draw a new picture</button>
-        <button class="btn secondary" id="image-upload-btn" title="Use your own image file for this tip">⤒ Upload a picture…</button>
+        <button class="btn secondary" id="image-modify-btn" title="Change the current picture, keeping its composition">Modify this picture</button>
+        <button class="btn secondary" id="image-new-btn" title="Draw a brand-new picture from your description">Draw a new picture</button>
+        <button class="btn secondary" id="image-upload-btn" title="Use your own image file for this tip">Upload a picture…</button>
         <input id="image-upload-file" type="file" accept="image/*" hidden>
       </div>
       <div id="image-editor-status"></div>
@@ -260,8 +257,8 @@
     <div id="analysis-anecdote"></div>
     <div id="analysis-video"></div>
     <div id="tip-tools">
-      <button class="btn secondary" id="share-tip-btn" title="Copy a public link to this tip">🔗 Share</button>
-      <button class="btn secondary" id="practice-tip-btn" style="display:none" title="Pin this tip as the one you're practising this week">⭑ Practice this week</button>
+      <button class="btn secondary" id="share-tip-btn" title="Copy a public link to this tip">Share</button>
+      <button class="btn secondary" id="practice-tip-btn" style="display:none" title="Pin this tip as the one you're practising this week">Practice this week</button>
     </div>
     <div class="analysis-label">Choose an angle — generated on demand</div>
     <div id="analysis-options">
@@ -278,7 +275,7 @@
       <textarea id="journal-input" placeholder="How did applying this tip go?"></textarea>
       <div id="journal-actions">
         <button class="btn" id="journal-add-btn">Add entry</button>
-        <button class="btn secondary" id="journal-feedback-btn" title="AI coaching based on your whole journal for this tip">✨ Get AI feedback</button>
+        <button class="btn secondary" id="journal-feedback-btn" title="AI coaching based on your whole journal for this tip">Get AI feedback</button>
       </div>
       <div id="journal-status"></div>
     </div>
@@ -317,7 +314,7 @@
       <p style="font-size:0.8rem;color:#666;line-height:1.5">
         Paste your tips — <strong>one per line</strong> works well. Add <strong>#tags</strong> inline if
         you like (first tag = primary, the rest secondary), or leave them out and use
-        <strong>✨ Suggest tags</strong>. You'll review and edit everything before it's saved.<br>
+        <strong>Suggest tags</strong>. You'll review and edit everything before it's saved.<br>
         Example: <code style="background:#f0f0eb;padding:1px 5px;border-radius:3px">Drink water first thing #health #morning</code>
       </p>
       <div>
@@ -337,7 +334,7 @@
       <div id="batch-review-list"></div>
       <div id="batch-status" style="font-size:0.8rem;color:#5a8a2a;min-height:1em"></div>
       <div class="modal-actions">
-        <button class="btn secondary" id="batch-suggest-btn" style="margin-right:auto">✨ Suggest tags</button>
+        <button class="btn secondary" id="batch-suggest-btn" style="margin-right:auto">Suggest tags</button>
         <button class="btn secondary" id="batch-back-btn">← Back to text</button>
         <button class="btn" id="batch-commit-btn">Import</button>
       </div>
@@ -447,7 +444,7 @@
     <div id="review-list"></div>
     <div id="review-status" style="font-size:0.8rem;color:var(--accent);min-height:1em"></div>
     <div class="modal-actions">
-      <button class="btn secondary" id="review-suggest-btn" style="margin-right:auto;display:none">✨ Suggest tags</button>
+      <button class="btn secondary" id="review-suggest-btn" style="margin-right:auto;display:none">Suggest tags</button>
       <button class="btn secondary" id="review-close">Close</button>
     </div>
   </div>
@@ -460,7 +457,7 @@
     <p class="insights-sub">Out of the whole library you chose these. This looks for the specific, non-obvious thread connecting them, then offers pointed questions and small experiments to act on. Direct, not flattering.</p>
     <div id="insights-body"></div>
     <div class="modal-actions">
-      <button class="btn secondary" id="insights-regen" style="display:none">↻ Regenerate</button>
+      <button class="btn secondary" id="insights-regen" style="display:none">Regenerate</button>
       <button class="btn" id="insights-close">Close</button>
     </div>
   </div>
@@ -535,7 +532,7 @@
       <ul class="help-list">
         <li><strong>Switch views</strong> with the buttons at the top — <em>Network</em>, <em>Cards</em>, <em>Ask</em>, and <em>Favorites</em>.</li>
         <li><strong>Search</strong> in the box up top. <em>Keyword</em> matches the words you type; <em>Meaning</em> finds tips that are similar in idea even when the words differ.</li>
-        <li><strong>Filter by tag</strong> — open the <em>☰ Filter</em> panel to narrow tips down to one or more tags.</li>
+        <li><strong>Filter by tag</strong> — open the <em>Filter</em> panel to narrow tips down to one or more tags.</li>
       </ul>
     </div>
 
@@ -569,9 +566,9 @@
         <li><strong>Tap the heart (♡)</strong> on a tip to save it to your <em>Favorites</em>.</li>
         <li>In Favorites, open a tip and pick an <strong>angle</strong> under “Explore this tip” to see it from different perspectives.</li>
         <li><strong>Your journal</strong> — in the same pane, log how applying the tip went. It's private to you, and your entries survive even if you un-favorite the tip.</li>
-        <li><strong>✨ Get AI feedback</strong> — the AI reads the tip and your whole journal for it, then coaches you on applying it more effectively. The feedback is saved into the journal so you can re-read it later.</li>
-        <li><strong>⭑ Practice this week</strong> — pin one tip as your current practice; Favorites shows your progress and nudges you to journal it. A <strong>weekly review</strong> lets the AI reflect on all of the week's entries.</li>
-        <li><strong>🔗 Share</strong> — copy a public link to any tip; <strong>🔔 Daily tip</strong> (in your account menu, on the installed app) sends one tip each morning.</li>
+        <li><strong>Get AI feedback</strong> — the AI reads the tip and your whole journal for it, then coaches you on applying it more effectively. The feedback is saved into the journal so you can re-read it later.</li>
+        <li><strong>Practice this week</strong> — pin one tip as your current practice; Favorites shows your progress and nudges you to journal it. A <strong>weekly review</strong> lets the AI reflect on all of the week's entries.</li>
+        <li><strong>Share</strong> — copy a public link to any tip; <strong>Daily tip</strong> (in your account menu, on the installed app) sends one tip each morning.</li>
       </ul>
     </div>
 
@@ -592,7 +589,7 @@
         <li><strong>List view</strong> — the admin-only view for browsing and editing every tip.</li>
         <li><strong>Editing a tip</strong> — click a tip in List view to open it. Edit its wording and anecdote, attach a <em>video</em> (with optional start/stop times), write your own <em>“choose an angle”</em> text, and manage its tags. Click <strong>Save</strong> to store everything at once.</li>
         <li><strong>“Choose an angle” text</strong> — anything you write here is shown to readers in the Favorites “Explore this tip” pane instead of AI-generated text. Leave a box blank to keep that angle AI-generated.</li>
-        <li><strong>Picture</strong> — every tip has an illustration in one shared style. In the tip editor you can either <em>✎ Modify this picture</em> (describe a change, e.g. “add a moon” — the rest of the picture stays as it is) or <em>✨ Draw a new picture</em> (describe the picture you want from scratch). Both keep the library's style, and each one costs a few cents. You can also <em>⤒ Upload a picture</em> to use your own image file instead — that's free and works even if AI generation isn't switched on.</li>
+        <li><strong>Picture</strong> — every tip has an illustration in one shared style. In the tip editor you can either <em>Modify this picture</em> (describe a change, e.g. “add a moon” — the rest of the picture stays as it is) or <em>Draw a new picture</em> (describe the picture you want from scratch). Both keep the library's style, and each one costs a few cents. You can also <em>Upload a picture</em> to use your own image file instead — that's free and works even if AI generation isn't switched on.</li>
         <li><strong>Tips &amp; Tags Management</strong> menu (top right when in List view):
           <ul>
             <li><em>Add Tip</em> — create a single tip.</li>

@@ -94,8 +94,8 @@
     const show = embeddingsEnabled;
     const nb = $("net-suggest-mode"), cb = $("cv-suggest-mode");
     const meaning = suggestMode === "meaning";
-    if (nb) { nb.style.display = show ? "" : "none"; nb.textContent = meaning ? "Suggest: Meaning ✨" : "Suggest: Tags"; }
-    if (cb) { cb.style.display = show ? "" : "none"; cb.textContent = meaning ? "Suggestions: Meaning ✨" : "Suggestions: Tags"; }
+    if (nb) { nb.style.display = show ? "" : "none"; nb.textContent = meaning ? "Suggest: Meaning" : "Suggest: Tags"; }
+    if (cb) { cb.style.display = show ? "" : "none"; cb.textContent = meaning ? "Suggestions: Meaning" : "Suggestions: Tags"; }
   }
 
   function setSuggestMode(mode) {
@@ -139,7 +139,7 @@
               ? `<button class="account-item account-item-admin" id="admin-logout-btn" role="menuitem"><span class="admin-badge">ADMIN</span> Exit admin mode</button>`
               : `<button class="account-item" id="admin-open-btn" role="menuitem">⚙ Admin sign-in…</button>`) +
             `<div class="account-menu-sep"></div>` +
-            `<button class="account-item" id="push-toggle-btn" role="menuitem" style="display:none">🔔 Daily tip</button>` +
+            `<button class="account-item" id="push-toggle-btn" role="menuitem" style="display:none">Daily tip</button>` +
             `<div class="account-menu-label">Appearance</div>` +
             `<div class="theme-seg" role="group" aria-label="Appearance">` +
               themeOpt("light", "Light") + themeOpt("medium", "Medium") + themeOpt("dark", "Dark") +
@@ -871,7 +871,7 @@
     track("search_meaning");
     showOnlySearchPanel();
     const panel = $("search-results");
-    panel.innerHTML = `<div class="fav-list-head">✨ Searching for “${escHtml(q)}”…</div>${SPINNER}`;
+    panel.innerHTML = `<div class="fav-list-head">Searching for “${escHtml(q)}”…</div>${SPINNER}`;
     const res = await api("GET", "/api/tips/search?q=" + encodeURIComponent(q));
     if (!searchActive) return;
     if (res.error) { panel.innerHTML = ERR(res.error); return; }
@@ -883,7 +883,7 @@
     const panel = $("search-results");
     const { q, results, mode } = lastSearch;
     const head = mode === "meaning"
-      ? `✨ Closest in meaning to “${escHtml(q)}”`
+      ? `Closest in meaning to “${escHtml(q)}”`
       : `Tips matching “${escHtml(q)}”`;
     panel.innerHTML =
       `<div class="fav-list-head">${head}<button class="btn secondary" id="search-clear">✕ Clear</button></div>`;
@@ -893,7 +893,7 @@
       const offerMeaning = mode !== "meaning" && embeddingsEnabled;
       panel.insertAdjacentHTML("beforeend",
         `<div id="empty-state">No tips matched “${escHtml(q)}”.` +
-        (offerMeaning ? `<br><button class="btn" id="try-meaning-btn" style="margin-top:12px">✨ Try Meaning search</button>` : "") +
+        (offerMeaning ? `<br><button class="btn" id="try-meaning-btn" style="margin-top:12px">Try Meaning search</button>` : "") +
         `</div>`);
       if (offerMeaning) $("try-meaning-btn").onclick = () => setSearchMode("meaning", true);
       return;
@@ -2052,7 +2052,7 @@
     if (NET.linkMode === "related" && embeddingsEnabled) {
       const c = NET.linkTargets.length;
       const sug = NET.suggested != null
-        ? ` · <span style="color:#ffcf33;font-weight:700">●</span> next suggested tip`
+        ? ` · <span style="color:var(--gold-bright);font-weight:700">●</span> next suggested tip`
         : "";
       $("net-hint").innerHTML =
         `Linked to the <b>${c}</b> closest tip${c !== 1 ? "s" : ""} <b>by meaning</b>${sug} · switch to <b>Tags</b> to combine secondary tags`;
@@ -2062,7 +2062,7 @@
     const expr = describeExpr();
     if (!expr) { $("net-hint").innerHTML = `Pick at least one tag to show links`; return; }
     const sug = NET.suggested != null
-      ? ` · <span style="color:#ffcf33;font-weight:700">●</span> next suggested tip`
+      ? ` · <span style="color:var(--gold-bright);font-weight:700">●</span> next suggested tip`
       : "";
     $("net-hint").innerHTML =
       `Links where <b>${escHtml(expr)}</b> — <b>${c}</b> tip${c !== 1 ? "s" : ""}${sug} · click tags to include/leave out, OR/AND to switch`;
@@ -2659,7 +2659,7 @@
     const canReflect = embeddingsEnabled && tips.length >= 3;
     list.innerHTML =
       `<div class="fav-list-head">★ Your favorites${tips.length ? " (" + tips.length + ")" : ""}` +
-      (canReflect ? `<button class="btn secondary" id="fav-reflect-btn" title="Use AI to reflect on what your saved tips say about you">✨ Reflect on these</button>` : "") +
+      (canReflect ? `<button class="btn secondary" id="fav-reflect-btn" title="Use AI to reflect on what your saved tips say about you">Reflect on these</button>` : "") +
       `</div>`;
     if (canReflect) $("fav-reflect-btn").onclick = openFavInsights;
     renderFavBanners(list);   // practice-this-week + revisit + weekly review, above the cards
@@ -2761,7 +2761,7 @@
     const isAI = e.kind === "ai";
     return `<div class="journal-entry${isAI ? " ai" : ""}" data-id="${e.id}">
       <div class="journal-entry-head">
-        <span class="journal-entry-meta">${isAI ? "✨ AI coach" : "You"} · ${escHtml(date)}</span>
+        <span class="journal-entry-meta">${isAI ? "AI coach" : "You"} · ${escHtml(date)}</span>
         <button class="journal-del" title="Delete this entry" aria-label="Delete entry">×</button>
       </div>
       <div class="journal-entry-text">${escHtml(e.content).replace(/\n/g, "<br>")}</div>
@@ -3038,7 +3038,7 @@
     const list = $("review-list");
     list.innerHTML = "";
     if (!reviewItems.length) {
-      list.innerHTML = `<div id="empty-state">No tips awaiting review. 🎉</div>`;
+      list.innerHTML = `<div id="empty-state">No tips awaiting review.</div>`;
       updateReviewSummary();
       return;
     }
@@ -3109,7 +3109,7 @@
     $("review-summary").textContent = n ? `${n} tip${n !== 1 ? "s" : ""} awaiting review` : "";
   }
 
-  // ✨ Suggest tags for submissions that don't have any (reuses the Gemini/Groq tagging endpoint).
+  // Suggest tags for submissions that don't have any (reuses the Gemini/Groq tagging endpoint).
   async function reviewSuggestTags() {
     const empties = reviewItems.filter(i => i.content.trim() && !i.tags.length);
     if (!empties.length) { toast("Every submission already has tags."); return; }
@@ -3369,7 +3369,7 @@
     if (p && p.practice) {
       const pr = p.practice;
       parts.push(`<div class="fav-banner practice">
-        <div class="fav-banner-text"><b>⭑ This week's practice</b> — ${escHtml(pr.tip.content)}
+        <div class="fav-banner-text"><b>This week's practice</b> — ${escHtml(pr.tip.content)}
           <span class="fav-banner-sub">day ${pr.days + 1} · ${pr.entries} journal entr${pr.entries === 1 ? "y" : "ies"}</span></div>
         <div class="fav-banner-actions">
           <button class="btn" id="practice-journal-btn">Journal it</button>
@@ -3378,14 +3378,14 @@
     }
     if (r && r.revisit) {
       parts.push(`<div class="fav-banner revisit">
-        <div class="fav-banner-text"><b>↻ Worth revisiting</b> — it's been ${r.revisit.days} days since you
+        <div class="fav-banner-text"><b>Worth revisiting</b> — it's been ${r.revisit.days} days since you
           journalled on “${escHtml(r.revisit.tip.content.slice(0, 70))}${r.revisit.tip.content.length > 70 ? "…" : ""}”</div>
         <div class="fav-banner-actions"><button class="btn secondary" id="revisit-open-btn">Open it</button></div>
       </div>`);
     }
     if (llmEnabled) {
       parts.push(`<div class="fav-banner week">
-        <div class="fav-banner-text"><b>✨ Weekly review</b> — let the AI read this week's journal entries and reflect back the thread.</div>
+        <div class="fav-banner-text"><b>Weekly review</b> — let the AI read this week's journal entries and reflect back the thread.</div>
         <div class="fav-banner-actions"><button class="btn secondary" id="week-review-btn">Review my week</button></div>
       </div>`);
     }
@@ -3425,7 +3425,7 @@
     if (!selectedFav) return;
     const r = await api("POST", "/api/practice", { tip_id: selectedFav.id });
     if (r.error) { toast(r.error); return; }
-    toast("Set as this week's practice — journal it as you go. ⭑");
+    toast("Set as this week's practice — journal it as you go.");
   };
 
   // ── Curated paths: follow an ordered sequence in Cards view ──
@@ -3459,7 +3459,7 @@
   function pathNextTip() {
     if (!cardPath) return null;
     if (cardPath.idx + 1 >= cardPath.tipIds.length) {
-      toast(`“${cardPath.title}” complete 🎉 — back to free exploring.`);
+      toast(`“${cardPath.title}” complete — back to free exploring.`);
       cardPath = null;
       return null;
     }
@@ -3495,14 +3495,14 @@
       const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToU8(st.key) });
       const r = await api("POST", "/api/push/subscribe", { subscription: sub.toJSON() });
       if (r.error) { toast(r.error); return; }
-      toast("Daily tip on — one tip each morning. 🔔");
+      toast("Daily tip on — one tip each morning.");
     }
     if (btn) updatePushLabel(btn);
   }
   async function updatePushLabel(btn) {
     const st = await pushState();
     btn.style.display = st.supported ? "" : "none";
-    if (st.supported) btn.textContent = st.sub ? "🔔 Daily tip: on" : "🔕 Daily tip: off";
+    if (st.supported) btn.textContent = st.sub ? "Daily tip: on" : "Daily tip: off";
   }
 
   // ── Deep link: /?tip=<id> (from share pages and notifications) opens that tip ──
