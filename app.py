@@ -443,7 +443,7 @@ def advise():
     advice that cites them (RAG). Open to everyone. Returns {answer, used:[ids], tips:[...]}.
     """
     if not embeddings.is_enabled():
-        return jsonify({"error": "The advice assistant needs an AI key (set GEMINI_API_KEY)."}), 503
+        return jsonify({"error": "The advice assistant needs semantic search (set EMBEDDINGS_API_KEY)."}), 503
     situation = ((request.get_json(force=True) or {}).get("situation") or "").strip()
     if not situation:
         return jsonify({"error": "Describe your situation first."}), 400
@@ -686,6 +686,10 @@ def generate_tip_image(tip_id):
     Costs money per call, so it only ever runs on an explicit admin action."""
     if not imagegen.is_enabled():
         return jsonify({"error": "Image generation isn't configured (set GEMINI_API_KEY)."}), 503
+    with get_db() as conn:
+        if quota_used_today(conn, IMAGE_QUOTA) >= IMAGE_DAILY_LIMIT:
+            return jsonify({"error": "Daily picture limit reached (%d today). "
+                                     "It resets at midnight UTC." % IMAGE_DAILY_LIMIT}), 429
     data = request.get_json(force=True) or {}
     style = (data.get("style") or os.environ.get("TIP_IMAGE_STYLE") or "goldline").strip()
     if style not in imagegen.STYLE_TEMPLATES:
@@ -713,6 +717,11 @@ def generate_tip_image(tip_id):
     except imagegen.ImageGenError as e:
         return jsonify({"error": "Image generation failed: %s" % e}), 502
 
+    # Charged on delivery, not on attempt: a call that raised produced no billable
+    # image, and burning the allowance on it would punish an outage twice.
+    with get_db() as conn:
+        quota_charge(conn, IMAGE_QUOTA)
+
     # Write to the persistent location so a redeploy can't silently revert this.
     os.makedirs(TIP_IMAGE_WRITE_DIR, exist_ok=True)
     with open(os.path.join(TIP_IMAGE_WRITE_DIR, fname), "wb") as fh:
@@ -721,6 +730,30 @@ def generate_tip_image(tip_id):
         conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tip_id))
         conn.commit()
         return jsonify(tip_with_tags(conn, tip_id))
+
+
+# ── Daily spend cap on picture generation ──
+# Gemini is billed per image and the button can be clicked as fast as it redraws, so
+# the cap is the backstop against a slip or a stuck retry costing real money. Global
+# rather than per-admin: it is a spend limit, not a fairness rule. Raise it without a
+# redeploy by setting IMAGE_DAILY_LIMIT in the environment.
+IMAGE_DAILY_LIMIT = int(os.environ.get("IMAGE_DAILY_LIMIT", "5"))
+IMAGE_QUOTA = "gemini_image"          # the api_usage.name this spend is counted under
+
+
+def quota_used_today(conn, name):
+    """How many paid calls of this kind have been made on the current UTC day."""
+    row = conn.execute(
+        "SELECT count FROM api_usage WHERE day = date('now') AND name = ?", (name,)).fetchone()
+    return row["count"] if row else 0
+
+
+def quota_charge(conn, name):
+    """Record one paid call. Called only after the provider actually delivered."""
+    conn.execute(
+        "INSERT INTO api_usage (day, name, count) VALUES (date('now'), ?, 1) "
+        "ON CONFLICT(day, name) DO UPDATE SET count = count + 1", (name,))
+    conn.commit()
 
 
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024   # generous for a phone photo, small enough to be safe
@@ -1122,9 +1155,9 @@ def import_tips():
 @app.post("/api/llm/suggest-tags")
 @admin_required
 def llm_suggest_tags():
-    """Suggest tags (from the existing taxonomy) for a list of tip contents, via Gemini."""
+    """Suggest tags (from the existing taxonomy) for a list of tip contents, via the LLM."""
     if not llm.is_enabled():
-        return jsonify({"error": "AI tagging isn't configured. Set GEMINI_API_KEY in .env."}), 503
+        return jsonify({"error": "AI tagging isn't configured. Set GROQ_API_KEY in .env."}), 503
     data = request.get_json(force=True) or {}
     contents = [c for c in (data.get("contents") or []) if (c or "").strip()]
     if not contents:
@@ -1154,7 +1187,7 @@ def embeddings_status():
 def embeddings_rebuild():
     """Embed every tip that's missing or out of date. Safe to run repeatedly."""
     if not embeddings.is_enabled():
-        return jsonify({"error": "Embeddings need an API key. Set GEMINI_API_KEY in .env."}), 503
+        return jsonify({"error": "Embeddings need an API key. Set EMBEDDINGS_API_KEY in .env."}), 503
     with get_db() as conn:
         try:
             result = embeddings.sync_all(conn)
@@ -1235,15 +1268,19 @@ def api_me():
         else:
             session.pop("uid", None)  # stale session (user row gone)
     pending_submissions = 0
+    images_remaining = 0
     if is_admin():
         with get_db() as conn:
             pending_submissions = conn.execute(
                 "SELECT COUNT(*) AS n FROM tip_submissions WHERE status = 'pending'").fetchone()["n"]
+            images_remaining = max(0, IMAGE_DAILY_LIMIT - quota_used_today(conn, IMAGE_QUOTA))
     return jsonify({"user": user, "auth_enabled": AUTH_ENABLED, "is_admin": is_admin(),
                     "llm_enabled": llm.is_enabled(), "embeddings_enabled": embeddings.is_enabled(),
                     # So the picture buttons can say WHY they're unavailable instead of
                     # failing after a click — and so config problems are diagnosable.
                     "images_enabled": imagegen.is_enabled(),
+                    # So the editor can show the allowance before it runs out.
+                    "images_remaining_today": images_remaining,
                     "pending_submissions": pending_submissions, "csrf_token": csrf_token()})
 
 

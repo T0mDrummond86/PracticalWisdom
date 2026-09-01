@@ -700,6 +700,122 @@ def test_tip_images_sync_links_and_clears(client, app_module, monkeypatch, tmp_p
     assert client.get("/api/tips").get_json()[0]["image_url"] == "" or True
 
 
+# ── Daily cap on Gemini picture generation ──
+# Every generation costs real money, and the route is reachable from the admin UI as
+# fast as it can be clicked. The cap is global (one admin) and resets on the UTC day.
+
+def mock_image_backend(app_module, monkeypatch, tmp_path, fail=False):
+    """Point the image route at a fake backend, so the suite never spends credits."""
+    monkeypatch.setattr(app_module.imagegen, "is_enabled", lambda: True)
+
+    def fake_generate(prompt, **kw):
+        if fail:
+            raise app_module.imagegen.ImageGenError("backend unavailable")
+        return b"RIFF0000WEBPfake"
+
+    monkeypatch.setattr(app_module.imagegen, "generate", fake_generate)
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+
+
+def draw(client, tid, token):
+    return client.post("/api/tips/%d/image" % tid, json={"style": "flat"},
+                       headers={"X-CSRF-Token": token})
+
+
+def test_tip_image_stops_after_the_daily_limit(client, app_module, monkeypatch, tmp_path):
+    mock_image_backend(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "IMAGE_DAILY_LIMIT", 5)
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    for i in range(5):
+        assert draw(client, tid, token).status_code == 200, "generation %d should be allowed" % i
+    r = draw(client, tid, token)
+    assert r.status_code == 429
+    assert "5" in r.get_json()["error"]
+
+
+def test_tip_image_quota_is_counted_per_day(client, app_module, monkeypatch, tmp_path):
+    mock_image_backend(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "IMAGE_DAILY_LIMIT", 5)
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    # yesterday's allowance was spent in full — today still starts clean
+    with app_module.get_db() as conn:
+        conn.execute("INSERT INTO api_usage (day, name, count) "
+                     "VALUES (date('now','-1 day'), ?, 5)", (app_module.IMAGE_QUOTA,))
+        conn.commit()
+    assert draw(client, tid, token).status_code == 200
+
+
+def test_tip_image_failed_generation_does_not_consume_quota(client, app_module, monkeypatch,
+                                                            tmp_path):
+    mock_image_backend(app_module, monkeypatch, tmp_path, fail=True)
+    monkeypatch.setattr(app_module, "IMAGE_DAILY_LIMIT", 1)
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    assert draw(client, tid, token).status_code == 502     # the backend failed
+    with app_module.get_db() as conn:
+        spent = conn.execute("SELECT COUNT(*) AS n FROM api_usage WHERE name = ?",
+                             (app_module.IMAGE_QUOTA,)).fetchone()["n"]
+    assert spent == 0, "a call that produced no picture must not be charged"
+
+
+def test_tip_image_upload_is_not_capped(client, app_module, monkeypatch, tmp_path):
+    import io
+    from PIL import Image
+    mock_image_backend(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "IMAGE_DAILY_LIMIT", 0)   # generation fully exhausted
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    assert draw(client, tid, token).status_code == 429
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8), (30, 80, 20)).save(buf, format="PNG")
+    r = client.post("/api/tips/%d/image/upload" % tid,
+                    data={"file": (io.BytesIO(buf.getvalue()), "pic.png")},
+                    content_type="multipart/form-data", headers={"X-CSRF-Token": token})
+    assert r.status_code == 200, "uploading your own file costs nothing and stays available"
+
+
+def test_me_reports_remaining_generations(client, app_module, monkeypatch, tmp_path):
+    mock_image_backend(app_module, monkeypatch, tmp_path)
+    monkeypatch.setattr(app_module, "IMAGE_DAILY_LIMIT", 5)
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    assert client.get("/api/me").get_json()["images_remaining_today"] == 5
+    draw(client, tid, token)
+    assert client.get("/api/me").get_json()["images_remaining_today"] == 4
+
+
+# ── Error strings must name the key the feature actually uses ──
+# advise/tagging go through Groq and search through EMBEDDINGS_API_KEY; only picture
+# generation uses Gemini. Naming the wrong variable sent a real debugging session astray.
+
+def test_advise_error_names_the_embeddings_key(client, app_module):
+    token = get_csrf(client)
+    r = client.post("/api/advise", json={"situation": "stuck on a big project"},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 503
+    err = r.get_json()["error"]
+    assert "EMBEDDINGS_API_KEY" in err and "GEMINI_API_KEY" not in err
+
+
+def test_suggest_tags_error_names_the_groq_key(client, app_module):
+    token = login_admin(client)
+    r = client.post("/api/llm/suggest-tags", json={"contents": ["a tip"]},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 503
+    err = r.get_json()["error"]
+    assert "GROQ_API_KEY" in err and "GEMINI_API_KEY" not in err
+
+
+def test_embeddings_rebuild_error_names_the_embeddings_key(client, app_module):
+    token = login_admin(client)
+    r = client.post("/api/embeddings/rebuild", headers={"X-CSRF-Token": token})
+    assert r.status_code == 503
+    err = r.get_json()["error"]
+    assert "EMBEDDINGS_API_KEY" in err and "GEMINI_API_KEY" not in err
+
+
 def test_imagegen_picks_gemini_when_keyed(monkeypatch):
     import imagegen
     monkeypatch.setenv("GEMINI_API_KEY", "k")

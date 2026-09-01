@@ -12,6 +12,7 @@
   let embeddingsEnabled = false; // whether semantic features (search/recommender) are available
   let llmEnabled = false;    // whether text-generation features (tags/advice) are available
   let imagesEnabled = false; // whether tip-picture generation is configured on the server
+  let imagesLeftToday = 0;   // remaining generations in today's spend cap (admins only)
   let pendingCount = 0;      // submissions awaiting review (admins only)
   let searchActive = false;  // showing semantic-search results instead of the current view
   let lastSearch = { q: "", results: [] };
@@ -75,6 +76,7 @@
     embeddingsEnabled = !!data.embeddings_enabled;
     llmEnabled = !!data.llm_enabled;
     imagesEnabled = !!data.images_enabled;
+    imagesLeftToday = data.images_remaining_today || 0;
     pendingCount = data.pending_submissions || 0;
     updateSearchModeUI();
     const ab = $("view-advise");
@@ -638,9 +640,19 @@
         + "(the server needs a GEMINI_API_KEY) — you can still upload your own.";
       return;
     }
+    if (imagesLeftToday <= 0) {
+      $("image-modify-btn").disabled = true;
+      $("image-new-btn").disabled = true;
+      status.style.color = "var(--text-tertiary)";
+      status.textContent = "Today's picture allowance is used up. It resets at midnight UTC "
+        + "— you can still upload your own.";
+      return;
+    }
     $("image-new-btn").disabled = false;
     // You can only modify a picture that exists.
     $("image-modify-btn").disabled = !tip.image_url;
+    status.style.color = "var(--text-tertiary)";
+    status.textContent = `${imagesLeftToday} picture${imagesLeftToday === 1 ? "" : "s"} left today.`;
   }
 
   async function remakeTipImage(mode) {
@@ -667,9 +679,11 @@
       return;
     }
     selectedTip = r;
+    imagesLeftToday = Math.max(0, imagesLeftToday - 1);
     renderImageEditor(r);
     status.style.color = "var(--accent)";
-    status.textContent = mode === "modify" ? "Picture updated." : "New picture created.";
+    const left = `${imagesLeftToday} left today.`;
+    status.textContent = (mode === "modify" ? "Picture updated. " : "New picture created. ") + left;
     loadTips(activeTags.join(","));   // refresh cards so the new picture shows everywhere
   }
 
