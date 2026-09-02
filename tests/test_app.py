@@ -700,6 +700,154 @@ def test_tip_images_sync_links_and_clears(client, app_module, monkeypatch, tmp_p
     assert client.get("/api/tips").get_json()[0]["image_url"] == "" or True
 
 
+# ── Exposure limits on the paid, publicly reachable routes ──
+# Semantic search, Ask and Explore all reach a metered API and none of them require a
+# login. Two layers guard them: a per-IP burst window, and a global daily ceiling.
+
+def enable_search(app_module, monkeypatch, hits=()):
+    """Turn semantic search on with a stub, so no model loads and no API is called."""
+    import embeddings
+    monkeypatch.setattr(embeddings, "is_enabled", lambda: True)
+    monkeypatch.setattr(embeddings, "search", lambda conn, q, k=10, exclude_ids=(): list(hits))
+
+
+def test_rate_limit_records_the_forwarded_client_ip(client, app_module):
+    """Behind Railway's proxy, remote_addr is the proxy — the limit must key on the client."""
+    client.post("/api/events", json={"name": "view_list"},
+                headers={"X-CSRF-Token": get_csrf(client), "X-Forwarded-For": "203.0.113.9"})
+    with app_module.get_db() as conn:
+        ips = [r["ip"] for r in conn.execute("SELECT ip FROM rate_hits").fetchall()]
+    assert ips == ["203.0.113.9"]
+
+
+def test_search_burst_limit_returns_429(client, app_module, monkeypatch):
+    enable_search(app_module, monkeypatch)
+    monkeypatch.setattr(app_module, "SEARCH_BURST_PER_MIN", 3)
+    hdr = {"X-Forwarded-For": "203.0.113.9"}
+    for i in range(3):
+        assert client.get("/api/tips/search?q=focus", headers=hdr).status_code == 200, i
+    assert client.get("/api/tips/search?q=focus", headers=hdr).status_code == 429
+
+
+def test_burst_limit_is_per_ip_not_shared(client, app_module, monkeypatch):
+    enable_search(app_module, monkeypatch)
+    monkeypatch.setattr(app_module, "SEARCH_BURST_PER_MIN", 2)
+    for _ in range(2):
+        client.get("/api/tips/search?q=focus", headers={"X-Forwarded-For": "203.0.113.9"})
+    assert client.get("/api/tips/search?q=focus",
+                      headers={"X-Forwarded-For": "203.0.113.9"}).status_code == 429
+    # a different visitor is unaffected
+    assert client.get("/api/tips/search?q=focus",
+                      headers={"X-Forwarded-For": "198.51.100.4"}).status_code == 200
+
+
+def test_burst_window_expires(client, app_module, monkeypatch):
+    enable_search(app_module, monkeypatch)
+    monkeypatch.setattr(app_module, "SEARCH_BURST_PER_MIN", 1)
+    hdr = {"X-Forwarded-For": "203.0.113.9"}
+    assert client.get("/api/tips/search?q=focus", headers=hdr).status_code == 200
+    assert client.get("/api/tips/search?q=focus", headers=hdr).status_code == 429
+    # age the recorded hit past the window rather than sleeping through it
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE rate_hits SET ts = ts - ?", (app_module.BURST_WINDOW + 1,))
+        conn.commit()
+    assert client.get("/api/tips/search?q=focus", headers=hdr).status_code == 200
+
+
+def test_search_daily_ceiling_degrades_instead_of_erroring(client, app_module, monkeypatch):
+    """A stranger who arrives after the budget is spent should see a paused feature,
+    not a broken one — and definitely not silently-swapped keyword results."""
+    enable_search(app_module, monkeypatch)
+    monkeypatch.setattr(app_module, "SEARCH_DAILY_MAX", 1)
+    hdr = {"X-Forwarded-For": "203.0.113.9"}
+    assert client.get("/api/tips/search?q=focus", headers=hdr).status_code == 200
+    r = client.get("/api/tips/search?q=focus", headers=hdr)
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["enabled"] is True and body["limited"] is True and body["results"] == []
+
+
+def test_advise_burst_limit_returns_429(client, app_module, monkeypatch):
+    enable_search(app_module, monkeypatch)
+    monkeypatch.setattr(app_module, "ADVISE_BURST_PER_MIN", 1)
+    token = get_csrf(client)
+    hdr = {"X-CSRF-Token": token, "X-Forwarded-For": "203.0.113.9"}
+    client.post("/api/advise", json={"situation": "stuck"}, headers=hdr)
+    assert client.post("/api/advise", json={"situation": "stuck"},
+                       headers=hdr).status_code == 429
+
+
+def test_analyze_admin_override_costs_nothing(client, app_module, monkeypatch):
+    """An admin-written lens is served from the database, so it must not spend quota."""
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    lens = sorted(app_module.llm.ANALYSIS_LENSES)[0]
+    client.put("/api/tips/%d/analysis" % tid, json={"analysis": {lens: "Written by hand."}},
+               headers={"X-CSRF-Token": token})
+    monkeypatch.setattr(app_module, "ANALYZE_DAILY_MAX", 0)   # budget fully spent
+    r = client.post("/api/tips/%d/analyze" % tid, json={"lens": lens},
+                    headers={"X-CSRF-Token": token, "X-Forwarded-For": "203.0.113.9"})
+    assert r.status_code == 200 and r.get_json()["custom"] is True
+
+
+def test_analyze_stops_at_the_daily_ceiling(client, app_module, monkeypatch):
+    tid = add_tip(app_module, "Measure what matters")     # no override → would call the LLM
+    monkeypatch.setattr(app_module.llm, "is_enabled", lambda: True)
+    def must_not_run(*a, **k):
+        raise AssertionError("the API must not be reached once the ceiling is spent")
+
+    monkeypatch.setattr(app_module.llm, "analyze_tip", must_not_run)
+    token = get_csrf(client)
+    monkeypatch.setattr(app_module, "ANALYZE_DAILY_MAX", 0)
+    lens = sorted(app_module.llm.ANALYSIS_LENSES)[0]
+    r = client.post("/api/tips/%d/analyze" % tid, json={"lens": lens},
+                    headers={"X-CSRF-Token": token, "X-Forwarded-For": "203.0.113.9"})
+    assert r.status_code == 429
+
+
+def test_events_burst_limit_returns_429(client, app_module, monkeypatch):
+    monkeypatch.setattr(app_module, "EVENTS_BURST_PER_MIN", 2)
+    token = get_csrf(client)
+    hdr = {"X-CSRF-Token": token, "X-Forwarded-For": "203.0.113.9"}
+    for _ in range(2):
+        assert client.post("/api/events", json={"name": "view_list"}, headers=hdr).status_code == 200
+    assert client.post("/api/events", json={"name": "view_list"},
+                       headers=hdr).status_code == 429
+
+
+def test_oversized_request_body_is_rejected(client, app_module):
+    app_module.app.config["MAX_CONTENT_LENGTH"] = 2048   # reset by the per-test app reload
+    token = get_csrf(client)
+    r = client.post("/api/events", data=b"x" * 8192,
+                    content_type="application/json", headers={"X-CSRF-Token": token})
+    assert r.status_code == 413
+
+
+def test_search_query_is_truncated_before_it_reaches_the_api(client, app_module, monkeypatch):
+    """The token bill must not scale with whatever an attacker sends."""
+    import embeddings
+    seen = {}
+    monkeypatch.setattr(embeddings, "is_enabled", lambda: True)
+
+    def spy(conn, q, k=10, exclude_ids=()):
+        seen["q"] = q
+        return []
+
+    monkeypatch.setattr(embeddings, "search", spy)
+    client.get("/api/tips/search?q=" + "a" * 5000, headers={"X-Forwarded-For": "203.0.113.9"})
+    assert len(seen["q"]) == app_module.MAX_QUERY_CHARS
+
+
+def test_admin_login_lockout_survives_a_process_restart(client, app_module):
+    """The old limiter lived in a dict, so it was per-worker and a redeploy cleared it."""
+    with app_module.get_db() as conn:
+        for _ in range(app_module.LOGIN_MAX_ATTEMPTS):
+            app_module.rate_hit(conn, "admin_login_fail", "203.0.113.9")
+    r = client.post("/api/admin/login", json={"username": "admin", "password": "admin"},
+                    headers={"X-CSRF-Token": get_csrf(client), "X-Forwarded-For": "203.0.113.9"})
+    assert r.status_code == 429
+
+
 # ── Daily cap on Gemini picture generation ──
 # Every generation costs real money, and the route is reachable from the admin UI as
 # fast as it can be clicked. The cap is global (one admin) and resets on the UTC day.

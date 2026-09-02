@@ -36,7 +36,9 @@ app.config.update(
 # proto/host so url_for(_external=True) builds https OAuth redirect URIs that match the
 # one registered with Google. Harmless locally — the headers simply aren't present.
 from werkzeug.middleware.proxy_fix import ProxyFix
-app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
+# x_for=1 matters as much as the others: without it request.remote_addr is Railway's
+# proxy, so every visitor on the internet shares a single rate-limit bucket.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 DB = os.environ.get("DB_PATH", os.path.join(os.path.dirname(__file__), "tips.db"))
 
 # ── Google OAuth — only enabled when credentials are present, so the app still
@@ -75,21 +77,71 @@ ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH") or generate_password
     os.environ.get("ADMIN_PASSWORD", "admin"), method="pbkdf2:sha256"
 )
 
-# Simple in-memory rate limit for admin login (per process; enough for dev).
+# Failed admin logins are counted in rate_hits like every other limit, so the lockout
+# is shared across gunicorn workers and is not cleared by a redeploy.
 LOGIN_MAX_ATTEMPTS = 5
-LOGIN_WINDOW = 300  # seconds
-_login_attempts = {}  # ip -> [timestamps of recent failures]
 
 
-def _login_blocked(ip):
-    now = time.time()
-    recent = [t for t in _login_attempts.get(ip, []) if now - t < LOGIN_WINDOW]
-    _login_attempts[ip] = recent
-    return len(recent) >= LOGIN_MAX_ATTEMPTS
+# ── Exposure limits on the paid routes that need no login ──
+# Semantic search, Ask and Explore each reach a metered API, and all three are open to
+# anyone. Two layers: a per-IP burst window stops a scripted loop, and a global daily
+# ceiling makes the worst-case spend a number rather than a surprise. Every value is an
+# environment variable so it can be retuned on Railway without a redeploy.
+BURST_WINDOW = 60                     # seconds in the rolling per-IP window
 
 
-def _login_failed(ip):
-    _login_attempts.setdefault(ip, []).append(time.time())
+def _limit(name, default):
+    return int(os.environ.get(name, str(default)))
+
+
+SEARCH_BURST_PER_MIN  = _limit("SEARCH_BURST_PER_MIN", 20)
+SEARCH_DAILY_MAX      = _limit("SEARCH_DAILY_MAX", 500)
+ADVISE_BURST_PER_MIN  = _limit("ADVISE_BURST_PER_MIN", 5)
+ADVISE_DAILY_MAX      = _limit("ADVISE_DAILY_MAX", 100)
+ANALYZE_BURST_PER_MIN = _limit("ANALYZE_BURST_PER_MIN", 10)
+ANALYZE_DAILY_MAX     = _limit("ANALYZE_DAILY_MAX", 200)
+EVENTS_BURST_PER_MIN  = _limit("EVENTS_BURST_PER_MIN", 60)
+
+# Cap what reaches a metered API, so the token bill can't scale with the request.
+MAX_QUERY_CHARS = _limit("MAX_QUERY_CHARS", 500)      # a search query
+MAX_SITUATION_CHARS = _limit("MAX_SITUATION_CHARS", 1000)   # an "Ask" description
+# Above the 12MB picture upload, so uploads still work but bodies aren't unbounded.
+MAX_BODY_BYTES = _limit("MAX_BODY_BYTES", 16 * 1024 * 1024)
+app.config["MAX_CONTENT_LENGTH"] = MAX_BODY_BYTES
+
+
+def client_ip():
+    """The visitor's address. Correct only because ProxyFix is set with x_for=1."""
+    return request.remote_addr or "?"
+
+
+def rate_hit(conn, name, ip):
+    """Record one request against this IP's window."""
+    conn.execute("INSERT INTO rate_hits (name, ip, ts) VALUES (?, ?, ?)", (name, ip, time.time()))
+    conn.commit()
+
+
+def burst_exceeded(conn, name, ip, per_min):
+    """True when this IP has already spent its allowance for `name` in the last minute.
+
+    Prunes expired rows as it goes, so the table stays small without a scheduled job.
+    """
+    cutoff = time.time() - BURST_WINDOW
+    conn.execute("DELETE FROM rate_hits WHERE ts < ?", (cutoff,))
+    conn.commit()
+    n = conn.execute("SELECT COUNT(*) AS n FROM rate_hits WHERE name = ? AND ip = ? AND ts >= ?",
+                     (name, ip, cutoff)).fetchone()["n"]
+    return n >= per_min
+
+
+def over_burst(name, per_min):
+    """Check-and-record in one step. Returns a 429 response, or None to continue."""
+    ip = client_ip()
+    with get_db() as conn:
+        if burst_exceeded(conn, name, ip, per_min):
+            return jsonify({"error": "That's a lot of requests — give it a minute."}), 429
+        rate_hit(conn, name, ip)
+    return None
 
 
 def is_admin():
@@ -367,11 +419,20 @@ def semantic_search():
         k = 20
     if not q or not embeddings.is_enabled():
         return jsonify({"enabled": embeddings.is_enabled(), "results": []})
+    over = over_burst("search", SEARCH_BURST_PER_MIN)
+    if over:
+        return over
+    q = q[:MAX_QUERY_CHARS]           # the bill must not scale with the request
     with get_db() as conn:
+        # Past the day's budget the feature pauses rather than breaks: `limited` lets the
+        # UI say so, instead of silently serving keyword results that look like a bug.
+        if quota_used_today(conn, "search") >= SEARCH_DAILY_MAX:
+            return jsonify({"enabled": True, "limited": True, "results": []})
         try:
             hits = embeddings.search(conn, q, k=k)
         except llm.LLMError as e:
             return jsonify({"error": "Search failed: %s" % e}), 502
+        quota_charge(conn, "search")
         results = []
         for h in hits:
             tip = tip_with_tags(conn, h["tip_id"])
@@ -447,7 +508,14 @@ def advise():
     situation = ((request.get_json(force=True) or {}).get("situation") or "").strip()
     if not situation:
         return jsonify({"error": "Describe your situation first."}), 400
+    over = over_burst("advise", ADVISE_BURST_PER_MIN)
+    if over:
+        return over
+    situation = situation[:MAX_SITUATION_CHARS]
     with get_db() as conn:
+        if quota_used_today(conn, "advise") >= ADVISE_DAILY_MAX:
+            return jsonify({"error": "The advice assistant has reached today's limit. "
+                                     "It resets at midnight UTC."}), 429
         try:
             hits = embeddings.search(conn, situation, k=6)
         except llm.LLMError as e:
@@ -464,6 +532,8 @@ def advise():
         result = llm.advise(situation, [{"id": t["id"], "content": t["content"]} for t in tips])
     except llm.LLMError as e:
         return jsonify({"error": "Advice generation failed: %s" % e}), 502
+    with get_db() as conn:
+        quota_charge(conn, "advise")
     return jsonify({"answer": result["answer"], "used": result["used"], "tips": tips})
 
 
@@ -504,14 +574,26 @@ def analyze_tip_lens(tip_id):
         override = conn.execute(
             "SELECT text FROM tip_analysis WHERE tip_id = ? AND lens = ?", (tip_id, lens)
         ).fetchone()
+    # An admin-written lens is served straight from the database, so it stays free and
+    # unlimited — only the generated path below reaches a metered API.
     if override and override["text"].strip():
         return jsonify({"text": override["text"], "custom": True})
     if not llm.is_enabled():
         return jsonify({"error": "AI analysis isn't configured (set GROQ_API_KEY)."}), 503
+    over = over_burst("analyze", ANALYZE_BURST_PER_MIN)
+    if over:
+        return over
+    with get_db() as conn:
+        if quota_used_today(conn, "analyze") >= ANALYZE_DAILY_MAX:
+            return jsonify({"error": "Explore has reached today's limit. "
+                                     "It resets at midnight UTC."}), 429
     try:
-        return jsonify(llm.analyze_tip(row["content"], lens))
+        out = llm.analyze_tip(row["content"], lens)
     except llm.LLMError as e:
         return jsonify({"error": "Analysis failed: %s" % e}), 502
+    with get_db() as conn:
+        quota_charge(conn, "analyze")
+    return jsonify(out)
 
 
 @app.put("/api/tips/<int:tip_id>/analysis")
@@ -1286,16 +1368,20 @@ def api_me():
 
 @app.post("/api/admin/login")
 def admin_login():
-    ip = request.remote_addr or "?"
-    if _login_blocked(ip):
-        return jsonify({"error": "Too many attempts — wait a few minutes and try again."}), 429
+    ip = client_ip()
+    with get_db() as conn:
+        if burst_exceeded(conn, "admin_login_fail", ip, LOGIN_MAX_ATTEMPTS):
+            return jsonify({"error": "Too many attempts — wait a few minutes and try again."}), 429
     data = request.get_json(force=True) or {}
     ok = (secrets.compare_digest(data.get("username", ""), ADMIN_USERNAME)
           and check_password_hash(ADMIN_PASSWORD_HASH, data.get("password", "")))
     if not ok:
-        _login_failed(ip)
+        with get_db() as conn:
+            rate_hit(conn, "admin_login_fail", ip)
         return jsonify({"error": "Invalid administrator credentials."}), 401
-    _login_attempts.pop(ip, None)  # reset on success
+    with get_db() as conn:        # a correct password clears the lockout
+        conn.execute("DELETE FROM rate_hits WHERE name = 'admin_login_fail' AND ip = ?", (ip,))
+        conn.commit()
     session["is_admin"] = True
     return jsonify({"is_admin": True})
 
@@ -1492,6 +1578,9 @@ def record_event():
     name = (data.get("name") or "").strip()
     if name not in EVENT_NAMES:
         return jsonify({"error": "unknown event"}), 400
+    over = over_burst("events", EVENTS_BURST_PER_MIN)
+    if over:
+        return over
     tip_id = data.get("tip_id")
     with get_db() as conn:
         conn.execute("INSERT INTO events (name, tip_id, user_id) VALUES (?, ?, ?)",
