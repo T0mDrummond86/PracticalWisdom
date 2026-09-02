@@ -29,8 +29,31 @@ The app runs as-is on Railway; these are the account/credential steps only you c
 | `VAPID_PUBLIC_KEY` | web-push public key — from your local `.env` |
 | `VAPID_SUB` | `mailto:` contact for push, e.g. `mailto:you@example.com` |
 | `PUSH_HOUR` | *(optional)* hour (server time, 0-23) for the daily tip; default 8 |
+| `IMAGE_DAILY_LIMIT` | *(optional)* picture generations per day; default 5 |
 | `EMBEDDINGS_API_URL` | your provider's `/v1/embeddings` endpoint |
 | `EMBEDDINGS_API_MODEL` | your provider's embedding model name |
+
+### Spend limits on the public AI routes
+
+Meaning search, Ask and Explore reach a metered API and need no login, so each one has a
+per-IP burst window (60 seconds) and a global daily ceiling. Past the ceiling the feature
+pauses with a clear message and resets at midnight UTC; keyword search is never limited.
+The defaults are deliberately loose — they stop a scripted loop, not a real visitor — and
+all of them are optional environment variables you can retune without a redeploy:
+
+| Variable | Default | Guards |
+|---|---|---|
+| `SEARCH_BURST_PER_MIN` / `SEARCH_DAILY_MAX` | 20 / 500 | `GET /api/tips/search` (one embedding call each) |
+| `ADVISE_BURST_PER_MIN` / `ADVISE_DAILY_MAX` | 5 / 100 | `POST /api/advise` (an embedding **and** a completion) |
+| `ANALYZE_BURST_PER_MIN` / `ANALYZE_DAILY_MAX` | 10 / 200 | `POST /api/tips/<id>/analyze`; an admin-written lens is served from the database and stays free |
+| `EVENTS_BURST_PER_MIN` | 60 | `POST /api/events` — costs nothing, just stops the table being stuffed |
+| `MAX_QUERY_CHARS` / `MAX_SITUATION_CHARS` | 500 / 1000 | truncates input before it reaches a metered API |
+| `MAX_BODY_BYTES` | 16MB | request-body ceiling; must stay above the 12MB picture upload |
+
+Counts live in SQLite (`rate_hits`, `api_usage`) rather than in process memory, so they are
+shared across gunicorn workers and survive a redeploy. This also means the limits depend on
+`ProxyFix` being configured with `x_for=1` — without it every visitor behind Railway's proxy
+shares one bucket.
 
 ### Semantic features (Meaning links / search / advice) — use the hosted API
 The local embedding model needs ~0.5–1 GB of RAM to load and will **OOM-kill the worker** on a

@@ -889,6 +889,11 @@
     const res = await api("GET", "/api/tips/search?q=" + encodeURIComponent(q));
     if (!searchActive) return;
     if (res.error) { panel.innerHTML = ERR(res.error); return; }
+    if (res.limited) {
+      panel.innerHTML = ERR("Meaning search has reached today's limit — it resets at midnight "
+        + "UTC. Keyword search still works.");
+      return;
+    }
     lastSearch = { q, results: res.results || [], mode: "meaning" };
     renderSearchResults();
   }
@@ -2524,7 +2529,10 @@
     status.style.color = "var(--text-tertiary)";
     status.textContent = "Finding a tip about that…";
     const url = (embeddingsEnabled ? "/api/tips/search?q=" : "/api/tips/fts?q=") + encodeURIComponent(q);
-    const res = await api("GET", url);
+    let res = await api("GET", url);
+    if (res && res.limited) {   // meaning search is paused for the day — keyword still works
+      res = await api("GET", "/api/tips/fts?q=" + encodeURIComponent(q));
+    }
     const results = (res && res.results) || [];
     // Prefer the closest match that's loaded and not yet seen; fall back so we always move.
     const hit = results.find(t => NET.byId[t.id] && !NET.visited.has(t.id))
