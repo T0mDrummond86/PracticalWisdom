@@ -156,7 +156,7 @@
       parts.push(`<button class="btn secondary icon-btn" id="help-open-btn" title="Help & how-to" aria-label="Help">?</button>`);
       parts.push(`<button class="btn secondary icon-btn" id="theme-cycle-btn" title="Switch appearance (light / medium / dark)" aria-label="Switch appearance">◐</button>`);
       if (authEnabled) {
-        parts.push(`<a class="btn google-btn" href="/login" title="Sign in to save favourites & keep a journal">Sign in with Google</a>`);
+        parts.push(`<a class="btn google-btn" href="/login" title="Sign in to save favourites & keep a journal">Sign in<span class="provider"> with Google</span></a>`);
       }
     }
     // An active admin session is always visible and exitable, Google or no Google.
@@ -363,7 +363,10 @@
 
   // ── Tags sidebar ──────────────────────────────────────────────
   // Remember which groups the user collapsed so re-renders don't reset it.
-  const sidebarGroupOpen = { primary: true, secondary: true };
+  // Secondaries start closed. 27 always-open rows read as a wall rather than a filter;
+  // the count on the summary says what is behind the lid. The choice is remembered
+  // for the session, so opening it once sticks while you work.
+  const sidebarGroupOpen = { primary: true, secondary: false };
 
   async function loadSidebar() {
     const tags = await api("GET", "/api/tags");
@@ -505,9 +508,36 @@
     renderVideoEditor(tip);   // the admin's attach-a-video field + preview
     renderImageEditor(tip);      // the tip's picture + regenerate/modify controls
     renderAnalysisEditor(tip);   // the admin's "choose an angle" override text
+    syncEditorSections(tip);     // open only the sections this tip actually uses
     // highlight the matching card in the list (works for clicks and programmatic calls)
     document.querySelectorAll(".tip-card").forEach(c => {
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id);
+    });
+  }
+
+  // Which optional editor sections are filled for this tip, and what the collapsed row
+  // should say. A filled section opens; an empty one stays shut and offers the action.
+  function editorSectionState(tip) {
+    const angles = tip.analysis || {};
+    const angleCount = Object.keys(angles).filter(k => (angles[k] || "").trim()).length;
+    return {
+      "detail-anecdote-wrap": [!!(tip.anecdote || "").trim(), "Add an anecdote"],
+      "video-editor": [!!tip.video_url, "Attach a video"],
+      "image-editor": [!!tip.image_url, "Add a picture"],
+      "analysis-editor": [angleCount > 0,
+                          angleCount ? `${angleCount} written` : "Write your own"],
+    };
+  }
+
+  function syncEditorSections(tip) {
+    const state = editorSectionState(tip);
+    Object.entries(state).forEach(([id, [filled, emptyLabel]]) => {
+      const el = $(id);
+      if (!el) return;
+      el.open = filled;
+      el.classList.toggle("is-empty", !filled);
+      const badge = el.querySelector(".section-state");
+      if (badge) badge.textContent = filled ? "" : emptyLabel;
     });
   }
 
