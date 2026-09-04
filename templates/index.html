@@ -48,7 +48,7 @@
 
   <div id="tip-panel">
     <div id="search-bar">
-      <button class="btn secondary" id="sidebar-toggle" aria-label="Filter by tag">Filter</button>
+      <button class="btn secondary" id="sidebar-toggle" aria-label="Filter by tag"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M3 5h18l-7 8v6l-4 2v-8Z"/></svg><span class="btn-label">Filter</span></button>
       <div id="view-toggle">
         <button class="view-btn active" id="view-list">List</button>
         <button class="view-btn" id="view-network">Network</button>
@@ -70,7 +70,7 @@
       </div>
       <div class="tb-group" id="tb-user">
       <div id="mgmt-wrap" style="display:none">
-        <button class="btn secondary" id="mgmt-toggle">Tips &amp; Tags Management ▾</button>
+        <button class="btn secondary" id="mgmt-toggle" aria-label="Tips and tags management"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg><span class="btn-label">Tips &amp; Tags Management</span><span class="mgmt-caret" aria-hidden="true">▾</span></button>
         <div id="mgmt-menu" class="hidden">
           <button class="btn secondary" id="add-tip-btn">+ Add Tip</button>
           <button class="btn secondary" id="batch-import-btn">Batch import tips</button>
@@ -183,12 +183,12 @@
       <h2>Tip</h2>
     </div>
     <textarea id="detail-content" placeholder="The tip…"></textarea>
-    <div id="detail-anecdote-wrap">
-      <h2>Anecdote</h2>
+    <details class="editor-section" id="detail-anecdote-wrap">
+      <summary><span class="section-name">Anecdote</span><span class="section-state"></span></summary>
       <textarea id="detail-anecdote" placeholder="A short story or context for this tip…"></textarea>
-    </div>
-    <div id="video-editor">
-      <h2>Further information — video</h2>
+    </details>
+    <details class="editor-section" id="video-editor">
+      <summary><span class="section-name">Video</span><span class="section-state"></span></summary>
       <div id="video-row">
         <input id="video-url-input" type="text" placeholder="Paste a YouTube, Vimeo, or Cloudflare Stream link…" />
         <button class="btn" id="video-save-btn">Attach</button>
@@ -201,9 +201,9 @@
       <div id="video-status"></div>
       <div id="video-preview"></div>
       <button class="btn secondary" id="video-remove-btn" style="display:none">Remove video</button>
-    </div>
-    <div id="image-editor">
-      <h2>Picture</h2>
+    </details>
+    <details class="editor-section" id="image-editor">
+      <summary><span class="section-name">Picture</span><span class="section-state"></span></summary>
       <div id="tip-image-preview"></div>
       <p id="image-editor-note">Describe the picture you want, or how to change the one above. Either way it keeps the library's style.</p>
       <textarea id="image-instruction" placeholder="e.g. a lighthouse on a cliff at night — or — make the tree bigger and add a moon"></textarea>
@@ -214,14 +214,14 @@
         <input id="image-upload-file" type="file" accept="image/*" hidden>
       </div>
       <div id="image-editor-status"></div>
-    </div>
-    <div id="analysis-editor">
-      <h2>“Choose an angle” — your own text (optional)</h2>
+    </details>
+    <details class="editor-section" id="analysis-editor">
+      <summary><span class="section-name">“Choose an angle” text</span><span class="section-state"></span></summary>
       <p id="analysis-editor-note">Write your own text for any angle. When set, readers see it in the Favorites “Explore this tip” pane instead of AI-generated analysis. Leave an angle blank to keep it AI-generated.</p>
       <div id="analysis-editor-fields"></div>
       <button class="btn" id="save-analysis-btn">Save angle text</button>
       <div id="analysis-editor-status"></div>
-    </div>
+    </details>
     <div id="tag-editor">
       <h2>Tags</h2>
       <div id="current-tags"></div>

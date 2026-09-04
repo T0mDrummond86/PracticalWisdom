@@ -256,8 +256,13 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
   display: flex; flex-direction: column; padding: var(--s-4) var(--s-3);
   gap: var(--s-3); overflow-y: auto;
 }
-#sidebar h2 { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-bottom: var(--s-1); }
-#tag-list { display: flex; flex-direction: column; gap: 2px; }
+#sidebar h2 { font-size: var(--fs-2xs); color: var(--text-tertiary); margin-bottom: var(--s-1); }
+#tag-list {
+  display: flex; flex-direction: column; gap: 2px;
+  /* Scroll inside the rail, so a long taxonomy never pushes "Filter by tag" away. */
+  overflow-y: auto; min-height: 0; flex: 1;
+  scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent;
+}
 
 .tag-group { margin-bottom: var(--s-1); }
 .tag-group > summary {
@@ -353,17 +358,23 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 }
 .btn.secondary:hover { background: var(--glass-hover); color: var(--text); }
 
-#tip-list { flex: 1; overflow-y: auto; padding: var(--s-4) var(--s-5); display: flex; flex-direction: column; gap: var(--s-2); }
+#tip-list { flex: 1; overflow-y: auto; padding: var(--s-4) var(--s-5); display: flex; flex-direction: column; }
 
-/* ── Wisdom cards — the centrepiece ── */
+/* ── Wisdom rows — the centrepiece ──
+   Deliberately not cards. A one-line tip inside a bordered, shadowed, rounded box makes
+   the container louder than the sentence, and a screenful of them is a screenful of
+   boxes. Separation comes from a hairline and space; selection is the only state that
+   earns a fill. Cards view keeps its card, because there the card IS the object. */
 .tip-card {
-  background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--r-md);
-  padding: 14px 18px; cursor: pointer; box-shadow: var(--shadow-card);
-  transition: transform var(--motion) var(--ease), box-shadow var(--motion) var(--ease), border-color var(--motion) var(--ease);
+  background: none; border: none; border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0; padding: 14px 16px; cursor: pointer;
+  transition: background var(--motion-fast) var(--ease);
   display: flex; align-items: stretch; gap: var(--s-3);
 }
-.tip-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lift); border-color: var(--border); }
-.tip-card.selected { border-color: var(--accent-soft); box-shadow: 0 0 0 2px var(--accent-tint-bg); }
+.tip-card:last-child { border-bottom: none; }
+.tip-card:hover { background: var(--accent-wash); }
+.tip-card.selected { background: var(--surface-2); border-radius: var(--r-sm); border-bottom-color: transparent; }
+.tip-card.selected .tip-content { color: var(--accent-tint-fg); font-weight: 600; }
 
 .tip-content { font-size: var(--fs-md); line-height: 1.5; color: var(--text); font-weight: 450; }
 .tip-tags { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 5px; }
@@ -387,15 +398,15 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .analysis-close:hover { color: var(--text); }
 #analysis-tip {
   font-size: var(--fs-md); line-height: 1.5; color: var(--text);
-  background: var(--surface-2); border-left: 3px solid var(--gold); border-radius: var(--r-md); padding: 12px 14px;
+  background: var(--surface-2); border-left: 2px solid var(--gold); border-radius: var(--r-md); padding: 12px 14px;
 }
 /* The anecdote (story/context) under the tip — matches the Cards/Network treatment. */
 #analysis-anecdote {
   font-size: var(--fs-sm); line-height: 1.6; color: var(--text-secondary);
-  border-left: 3px solid var(--accent-soft); padding-left: 12px; white-space: pre-wrap;
+  border-left: 2px solid var(--accent-soft); padding-left: 12px; white-space: pre-wrap;
 }
 #analysis-anecdote:empty { display: none; }
-.analysis-label { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-tertiary); font-weight: 600; }
+.analysis-label { font-size: var(--fs-2xs); color: var(--text-tertiary); font-weight: 600; }
 #analysis-options { display: flex; flex-direction: column; gap: 6px; }
 .analysis-opt {
   text-align: left; background: var(--glass); border: 1px solid var(--glass-border); color: var(--text-secondary);
@@ -445,7 +456,7 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .fav-banner {
   display: flex; align-items: center; gap: var(--s-3); justify-content: space-between;
   background: var(--surface-2); border: 1px solid var(--border-subtle);
-  border-left: 4px solid var(--gold); border-radius: var(--r-md); padding: 12px 14px;
+  border-left: 2px solid var(--gold); border-radius: var(--r-md); padding: 12px 14px;
 }
 .fav-banner.revisit { border-left-color: var(--accent-soft); }
 .fav-banner.week { border-left-color: var(--info-fg); }
@@ -500,7 +511,7 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 }
 .journal-entry.ai { background: var(--accent-wash); border-color: var(--tier-primary-bd); }
 .journal-entry-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
-.journal-entry-meta { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); font-weight: 600; }
+.journal-entry-meta { font-size: var(--fs-2xs); color: var(--text-tertiary); font-weight: 600; }
 .journal-entry.ai .journal-entry-meta { color: var(--accent-tint-fg); }
 .journal-del {
   background: none; border: none; cursor: pointer; color: var(--text-tertiary);
@@ -597,7 +608,7 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
   cursor: pointer; padding: 4px 6px; border-radius: var(--r-sm); font-family: inherit;
 }
 .detail-delete:hover { background: var(--danger-bg); }
-#detail-pane h2 { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); }
+#detail-pane h2 { font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary); }
 
 #detail-content {
   font-size: var(--fs-sm); line-height: 1.6; color: var(--text);
@@ -617,7 +628,7 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 .chip-remove:hover { background: var(--danger-bg); color: var(--danger); }
 
 #tag-palette { display: flex; flex-direction: column; gap: var(--s-1); max-height: 520px; overflow-y: auto; }
-.palette-group-label { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-tertiary); margin-top: 4px; }
+.palette-group-label { font-size: var(--fs-2xs); color: var(--text-tertiary); margin-top: 4px; }
 .palette-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip-add {
   background: var(--surface-2); border-radius: var(--r-pill); padding: 2px 10px;
@@ -732,7 +743,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
   padding: 10px 13px; display: flex; flex-direction: column; gap: 6px;
   font-size: var(--fs-2xs); color: #cdd6e0; max-width: 180px;
 }
-#net-legend .legend-title { text-transform: uppercase; letter-spacing: 0.08em; color: #8a96a6; font-size: var(--fs-3xs); margin-bottom: 2px; }
+#net-legend .legend-title { color: #8a96a6; font-size: var(--fs-2xs); margin-bottom: 2px; }
 .legend-row {
   display: flex; align-items: center; gap: var(--s-2);
   cursor: pointer; padding: 3px 6px; border-radius: var(--r-sm); transition: background var(--motion-fast);
@@ -819,7 +830,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 }
 #net-card-anecdote:empty { display: none; }
 #net-card-linkmode { display: flex; align-items: center; gap: 6px; margin-top: 12px; }
-.net-linkmode-label { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.07em; color: #8a96a6; margin-right: 2px; }
+.net-linkmode-label { font-size: var(--fs-2xs); color: #8a96a6; margin-right: 2px; }
 .net-seg {
   background: rgba(255,255,255,0.08); color: #cdd6e2; border: 1px solid rgba(255,255,255,0.16);
   border-radius: var(--r-pill); padding: 2px 11px; font-size: var(--fs-2xs); cursor: pointer; transition: background var(--motion-fast);
@@ -828,7 +839,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 .net-seg.active { background: var(--gold-bright); border-color: var(--gold-bright); color: #2a2410; font-weight: 600; }
 #net-card-related-note { margin-top: 10px; font-size: var(--fs-2xs); color: #aeb8c6; font-style: italic; }
 
-.net-card-tags-label { margin-top: 12px; font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.07em; color: #8a96a6; }
+.net-card-tags-label { margin-top: 12px; font-size: var(--fs-2xs); color: #8a96a6; }
 #net-card-tags { margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .net-card-tag {
   border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.06); color: #e7eef6;
@@ -889,9 +900,16 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 .auth-hint { color: var(--text-tertiary); font-size: var(--fs-xs); }
 /* Status = small coloured pill */
 .admin-badge {
-  background: var(--status-red); color: #fff; padding: 3px 9px; border-radius: var(--r-pill);
-  font-size: var(--fs-3xs); font-weight: 700; letter-spacing: 0.04em;
+  background: none; color: var(--text-tertiary); padding: 3px 0 3px 12px; border-radius: 0;
+  font-size: var(--fs-2xs); font-weight: 600; letter-spacing: 0.02em; position: relative;
 }
+/* A small dot carries "you are an admin" without a red pill shouting it all day. */
+.admin-badge::before {
+  content: ""; position: absolute; left: 2px; top: 50%; transform: translateY(-50%);
+  width: 6px; height: 6px; border-radius: 50%; background: var(--status-red);
+}
+/* Inside the account menu it sits on a fill, so the dot alone reads better there too. */
+.account-item-admin .admin-badge { font-size: var(--fs-2xs); padding: 2px 0 2px 12px; }
 
 /* ── Account dropdown (signed-in users) ── */
 .account { position: relative; }
@@ -937,10 +955,9 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 .help-list ul { margin-top: 6px; padding-left: 18px; display: flex; flex-direction: column; gap: var(--s-1); }
 .help-admin { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 20px; }
 .help-admin-note { font-size: var(--fs-xs); color: var(--accent); margin-bottom: 8px; }
-.account-item-admin .admin-badge { font-size: var(--fs-3xs); padding: 2px 7px; }
 .account-menu-label {
-  padding: 6px 10px 4px; font-size: var(--fs-3xs); text-transform: uppercase;
-  letter-spacing: 0.07em; color: var(--text-tertiary); font-weight: 600;
+  padding: 6px 10px 4px; font-size: var(--fs-2xs);
+  color: var(--text-tertiary); font-weight: 600;
 }
 .account-menu-sep { height: 1px; background: var(--border-subtle); margin: 4px 0; }
 
@@ -975,7 +992,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 /* ── Favourite (heart) control, integrated into the card as a left rail ── */
 .vote-col {
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-  flex: none; padding-right: var(--s-3); border-right: 1px solid var(--border-subtle);
+  flex: none; padding-right: var(--s-3);
 }
 .tip-main { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
 .fav-btn {
@@ -1108,7 +1125,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 #cv-content { font-size: var(--fs-2xl); line-height: 1.5; color: var(--text); }
 #cv-anecdote {
   font-size: var(--fs-md); line-height: 1.6; color: var(--text-secondary);
-  border-left: 3px solid var(--accent-soft); padding-left: 12px; white-space: pre-wrap;
+  border-left: 2px solid var(--accent-soft); padding-left: 12px; white-space: pre-wrap;
 }
 #cv-anecdote:empty { display: none; }
 #cv-tags { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -1124,11 +1141,11 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 /* ── Change course: redirect the trail by theme or by description ── */
 #cv-redirect {
   display: flex; flex-direction: column; gap: 9px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--border-subtle); border-radius: var(--r-md);
   padding: 14px 16px;
 }
 #cv-redirect.hidden { display: none; }
-.cv-redirect-label { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-tertiary); font-weight: 600; }
+.cv-redirect-label { font-size: var(--fs-2xs); color: var(--text-tertiary); font-weight: 600; }
 #cv-redirect-groups { display: flex; flex-wrap: wrap; gap: 7px; }
 .cv-group-chip {
   background: transparent; border: 1px solid var(--border); border-radius: var(--r-pill);
@@ -1151,7 +1168,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
   overflow-y: auto; padding: var(--s-4) var(--s-5); background: var(--bg); min-height: 0;
 }
 .fav-list-head {
-  font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.08em;
+  font-size: var(--fs-2xs);
   color: var(--text-tertiary); margin-bottom: 2px;
   display: flex; align-items: center; gap: 10px;
 }
@@ -1175,16 +1192,16 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 #advise-result { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
 .advise-thinking { display: flex; align-items: center; gap: var(--s-3); color: var(--text-secondary); font-size: var(--fs-sm); padding: 8px 0; }
 .advise-answer {
-  background: var(--surface-2); border: 1px solid var(--border-subtle); border-left: 4px solid var(--accent-soft);
+  background: var(--surface-2); border: 1px solid var(--border-subtle); border-left: 2px solid var(--accent-soft);
   border-radius: var(--r-md); padding: 16px 18px; font-size: var(--fs-md); line-height: 1.65; color: var(--text);
   box-shadow: var(--shadow-card);
 }
-.advise-source-label { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-tertiary); margin-top: 6px; }
+.advise-source-label { font-size: var(--fs-2xs); color: var(--text-tertiary); margin-top: 6px; }
 .advise-tips { display: flex; flex-direction: column; gap: var(--s-2); }
 
 /* ── "Your recent suggestions" list inside the Suggest modal ── */
 #suggest-history { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
-.suggest-hist-label { font-size: var(--fs-3xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-tertiary); margin: 4px 0 2px; }
+.suggest-hist-label { font-size: var(--fs-2xs); color: var(--text-tertiary); margin: 4px 0 2px; }
 .suggest-hist-row { display: flex; align-items: center; gap: 10px; font-size: var(--fs-xs); }
 .suggest-hist-text { flex: 1; min-width: 0; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sub-status { flex: none; font-size: var(--fs-3xs); font-weight: 600; padding: 2px 9px; border-radius: var(--r-pill); }
@@ -1195,9 +1212,9 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 /* ── Favorites insights modal ── */
 .insights-sub { font-size: var(--fs-xs); color: var(--text-secondary); line-height: 1.5; margin: -2px 0 10px; }
 #insights-body { display: flex; flex-direction: column; gap: 6px; }
-.insights-count { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-tertiary); }
+.insights-count { font-size: var(--fs-2xs); color: var(--text-tertiary); }
 .insights-label {
-  font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: 0.07em; color: var(--accent);
+  font-size: var(--fs-2xs); color: var(--accent);
   font-weight: 600; margin-top: 12px;
 }
 .insights-list { margin: 6px 0 0; padding-left: 20px; display: flex; flex-direction: column; gap: 7px; }
@@ -1223,7 +1240,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 }
 .batch-row {
   display: flex; gap: 10px; align-items: flex-start;
-  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 9px 10px; background: var(--input-bg);
+  border: 1px solid var(--border-subtle); border-radius: var(--r-sm); padding: 9px 10px; background: var(--input-bg);
 }
 .batch-row.no-tags { border-color: var(--danger-bd); background: var(--danger-bg); }
 .batch-del {
@@ -1251,7 +1268,7 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 #review-list { max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; padding: 2px 4px 2px 0; }
 .review-row {
   display: flex; flex-direction: column; gap: 7px;
-  border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px 14px; background: var(--input-bg);
+  border: 1px solid var(--border-subtle); border-radius: var(--r-md); padding: 12px 14px; background: var(--input-bg);
 }
 .review-meta { font-size: var(--fs-2xs); color: var(--text-tertiary); }
 .review-content, .review-tags {
@@ -1311,6 +1328,52 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 .load-error { text-align: center; color: var(--danger); padding: 40px 20px; font-size: var(--fs-sm); }
 
 /* ── Respect reduced-motion preferences ── */
+
+/* ── Detail pane: optional sections collapse to what is actually filled ──
+   Tip and Tags are always open because they always apply. Anecdote, Video, Picture and
+   the angle overrides open only when the tip has one, so an empty field costs a single
+   line instead of a whole block. The state text on the right is the affordance. */
+.editor-section { border-top: 1px solid var(--border-subtle); padding-top: var(--s-3); }
+.editor-section > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  display: flex; align-items: center; gap: var(--s-2);
+  font-size: var(--fs-xs); font-weight: 600; color: var(--text-secondary);
+  padding: 2px 0; border-radius: var(--r-sm);
+  transition: color var(--motion-fast) var(--ease);
+}
+.editor-section > summary::-webkit-details-marker { display: none; }
+.editor-section > summary::before {
+  content: "▸"; font-size: var(--fs-3xs); color: var(--text-tertiary);
+  transition: transform var(--motion-fast) var(--ease); display: inline-block;
+}
+.editor-section[open] > summary::before { transform: rotate(90deg); }
+.editor-section > summary:hover { color: var(--text); }
+.editor-section > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.section-state {
+  margin-left: auto; font-size: var(--fs-2xs); font-weight: 500; color: var(--text-tertiary);
+}
+/* An empty section names the action instead of reporting a void. */
+.editor-section.is-empty > summary .section-state { color: var(--accent); }
+.editor-section[open] > summary .section-state { display: none; }
+.editor-section > *:not(summary) { margin-top: var(--s-2); }
+
+/* Toolbar icon glyphs: shown only where the label is hidden (small screens). */
+.btn-icon { display: none; flex: 0 0 auto; }
+
+/* Selection, caret and scrollbars ship with browser defaults that belong to no design
+   system. Once the list stopped being a wall of cards these were the loudest untuned
+   surfaces left, so they take the palette like everything else. */
+::selection { background: var(--accent-tint-bg); color: var(--accent-tint-fg); }
+:root { caret-color: var(--accent); }
+* { scrollbar-width: thin; scrollbar-color: var(--border-strong) transparent; }
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong); border-radius: var(--r-pill);
+  border: 3px solid transparent; background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-clip: content-box; background-color: var(--text-tertiary); }
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
@@ -1366,20 +1429,38 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
   .brand-word { font-size: var(--fs-lg); }
   #auth-area { gap: 6px; font-size: var(--fs-xs); flex-wrap: wrap; justify-content: flex-end; }
   #auth-area .btn, #auth-area .google-btn { padding: 5px 9px; font-size: var(--fs-xs); }
+  #auth-area .google-btn .provider { display: none; }   /* "Sign in", not "Sign in with Google" */
   .avatar { width: 22px; height: 22px; }
 
   /* The tip panel is the full-width base layer; the rest become overlays. */
   #tip-panel { width: 100%; }
 
-  /* Search bar: view nav on its own (scrollable) row, full-width search below. */
-  #search-bar { flex-direction: column; align-items: stretch; gap: var(--s-2); padding: 8px 12px; }
-  #view-toggle { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Search bar: two rows, not four. Filter is an icon on the search line; the view
+     toggle scrolls horizontally rather than wrapping; management moves to the account
+     menu (see #mgmt-wrap below), which is where every other admin tool already lives. */
+  #search-bar {
+    display: grid; grid-template-columns: auto 1fr auto; align-items: center;
+    gap: var(--s-2); padding: 8px 12px;
+  }
+  /* Row 1 is navigation flanked by its two icon controls; row 2 is the search field at
+     full width, because it already carries the Keyword/Meaning toggle inside it. */
+  #view-toggle {
+    grid-column: 2; grid-row: 1; overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  #view-toggle::-webkit-scrollbar { display: none; }
   .view-btn { flex: 1 0 auto; white-space: nowrap; padding: 8px 12px; }
-  #tb-search, #tb-user { width: 100%; min-width: 0; margin: 0; flex: 1 1 auto; }
-  #tb-user { flex-wrap: wrap; }
+  #tb-search { grid-column: 1 / -1; grid-row: 2; width: auto; min-width: 0; margin: 0; }
+  #tb-user { display: contents; }
 
-  /* "☰ Filter" opens the tag sidebar — only in List view, only on mobile. */
-  #sidebar-toggle.avail { display: inline-flex; align-self: flex-start; order: -1; }
+  /* Filter and management collapse to their icons and share the search line, so the
+     toolbar is two rows rather than four. Neither control moves or disappears — an
+     admin tool that is unreachable on a phone is a regression, not a simplification. */
+  #sidebar-toggle.avail { display: inline-flex; grid-column: 1; grid-row: 1; }
+  #mgmt-wrap { grid-column: 3; grid-row: 1; margin: 0; }
+  #sidebar-toggle.avail, #mgmt-toggle { padding: 8px 10px; }
+  #sidebar-toggle .btn-label, #mgmt-toggle .btn-label, #mgmt-toggle .mgmt-caret { display: none; }
+  #sidebar-toggle .btn-icon, #mgmt-toggle .btn-icon { display: block; }
 
   /* Tag sidebar → slide-in left drawer with a dimmed backdrop. */
   #sidebar {
