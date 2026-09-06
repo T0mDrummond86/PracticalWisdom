@@ -573,12 +573,59 @@
 
   // A tip's AI illustration, when it has one. Rendered above the text in every view;
   // silently absent otherwise, so tips without a picture look exactly as before.
+  // Where a tip's picture goes, given a surface's three slots. `base` is the "above"
+  // slot's id; the other two are derived, so callers keep passing one id as before.
+  // Every slot is cleared each time, so switching position can't leave a ghost behind.
+  const IMAGE_SLOTS = { above: "", between: "-mid", below: "-below" };
+
+  // A float wraps what comes AFTER it, so it needs prose after it to wrap. Above the tip
+  // there always is; between tip and anecdote only when the anecdote exists; below
+  // everything, never — there it would land beside the buttons. With nothing to wrap it
+  // becomes a band, keeping the chosen width. Mirrors effective_align() in app.py.
+  function effectiveAlign(tip) {
+    const align = tip.image_align || "full";
+    if (align === "full") return "full";
+    if (tip.image_pos === "above") return align;
+    if (tip.image_pos === "between" && (tip.anecdote || "").trim()) return align;
+    return "full";
+  }
+
+  // Which block a floated picture belongs inside, per surface. It has to go INSIDE the
+  // text rather than in a slot beside it: these surfaces are flex columns, and a float
+  // never escapes a flex item — sibling items ignore it entirely, so a picture in its own
+  // slot simply gets painted over. Full-width pictures still use the standalone slots.
+  const IMAGE_HOSTS = {
+    "cv-image":       { above: "cv-content",   between: "cv-anecdote" },
+    "analysis-image": { above: "analysis-tip", between: "analysis-anecdote" },
+  };
+
   function renderTipImage(containerId, tip) {
-    const box = $(containerId);
-    if (!box) return;
-    box.innerHTML = (tip && tip.image_url)
-      ? `<img class="tip-image" src="${escHtml(tip.image_url)}" alt="" loading="lazy">`
-      : "";
+    const hosts = IMAGE_HOSTS[containerId];
+    const pos = (tip && IMAGE_SLOTS[tip.image_pos] !== undefined) ? tip.image_pos : "above";
+    const align = tip ? effectiveAlign(tip) : "full";
+
+    // Clear every slot and any picture previously injected into the text.
+    Object.values(IMAGE_SLOTS).forEach(sfx => {
+      const box = $(containerId + sfx);
+      if (box) box.innerHTML = "";
+    });
+    if (hosts) Object.values(hosts).forEach(id => {
+      const el = $(id);
+      if (el) el.querySelectorAll(":scope > img.tip-image").forEach(n => n.remove());
+    });
+    if (!(tip && tip.image_url)) return;
+
+    const img = `<img class="tip-image pic-${escHtml(align)} pic-${escHtml(tip.image_size || "m")}"`
+      + ` src="${escHtml(tip.image_url)}" alt="">`;
+    if (align === "full" || !hosts) {
+      // Surfaces without placement slots (the network card's fixed thumbnail) always
+      // use their single container, whatever position the tip asks for.
+      const box = $(containerId + (hosts ? IMAGE_SLOTS[pos] : "")) || $(containerId);
+      if (box) box.innerHTML = img;
+      return;
+    }
+    const host = $(hosts[pos]);
+    if (host) host.insertAdjacentHTML("afterbegin", img);
   }
 
   // Add the host's autoplay flag to an embed src — used when the player appears in
@@ -661,6 +708,9 @@
     $("image-instruction").value = "";
     const status = $("image-editor-status");
     status.textContent = "";
+    // Placement costs nothing and applies to uploaded pictures too, so it is settled
+    // before the generation-unavailable branches below return early.
+    renderImageLayout(tip);
     // Say up front when the server can't make pictures, rather than failing on click.
     if (!imagesEnabled) {
       $("image-modify-btn").disabled = true;
@@ -684,6 +734,53 @@
     status.style.color = "var(--text-tertiary)";
     status.textContent = `${imagesLeftToday} picture${imagesLeftToday === 1 ? "" : "s"} left today.`;
   }
+
+  // Picture layout. Saved on press rather than with the main Save: the whole point of
+  // placement control is seeing where it lands, so a round trip through Save-then-switch
+  // would defeat it.
+  function renderImageLayout(tip) {
+    const box = $("image-layout");
+    if (!box) return;
+    box.hidden = !(tip && tip.image_url);        // nothing to place without a picture
+    if (box.hidden) return;
+    const current = { image_pos: tip.image_pos || "above",
+                      image_align: tip.image_align || "full",
+                      image_size: tip.image_size || "m" };
+    box.querySelectorAll(".seg-btn").forEach(b => {
+      b.classList.toggle("active", current[b.dataset.layout] === b.dataset.value);
+      // Width is meaningless for a band that is already the full card, and a float at
+      // 100% has nothing to wrap — say so by disabling rather than by silently ignoring.
+      if (b.dataset.layout === "image_align" && b.dataset.value !== "full") {
+        // A float needs prose after it, and at 100% there is no room beside it.
+        const noRoom = current.image_size === "l";
+        const nothingToWrap = current.image_pos === "below"
+          || (current.image_pos === "between" && !(tip.anecdote || "").trim());
+        b.disabled = noRoom || nothingToWrap;
+        b.title = noRoom ? "A full-width picture has no room for text beside it"
+          : nothingToWrap ? "Nothing follows the picture here for the text to wrap around"
+          : "";
+      }
+    });
+  }
+
+  async function setImageLayout(field, value) {
+    if (!selectedTip) return;
+    const status = $("image-editor-status");
+    const r = await api("POST", `/api/tips/${selectedTip.id}/image/layout`, { [field]: value });
+    if (r.error) {
+      status.style.color = "var(--danger)";
+      status.textContent = r.error;
+      return;
+    }
+    selectedTip = r;
+    renderImageLayout(r);
+    loadTips(activeTags.join(","));    // so Cards and Explore pick the new placement up
+  }
+
+  document.getElementById("image-layout").addEventListener("click", e => {
+    const btn = e.target.closest(".seg-btn");
+    if (btn && !btn.disabled) setImageLayout(btn.dataset.layout, btn.dataset.value);
+  });
 
   async function remakeTipImage(mode) {
     if (!selectedTip) return;
@@ -2754,8 +2851,8 @@
   function openFavAnalysis(tip) {
     selectedFav = tip;
     $("analysis-tip").textContent = tip.content;
-    renderTipImage("analysis-image", tip);                     // the tip's illustration, if any
     $("analysis-anecdote").textContent = tip.anecdote || "";   // the story/context behind the tip
+    renderTipImage("analysis-image", tip);   // after both blocks: a float lives inside one
     $("analysis-video").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";  // further info
     const overrides = tip.analysis || {};
     // An angle is available if the AI is on OR an admin has written text for it. Angles with

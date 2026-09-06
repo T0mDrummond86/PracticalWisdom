@@ -492,7 +492,48 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
   display: block; width: 100%; height: auto; border-radius: var(--r-md);
   background: var(--surface-2);
 }
+/* ── Picture placement ──
+   s/m/l are the picture's width as a fraction of the card. Alignment decides what fills
+   the rest: wrapped text when floated, empty margin when full. A float overflows its
+   slot and the following blocks' line boxes flow around it, which is what puts the
+   picture "inside" the text without restructuring the card. */
+.pic-s { width: 30%; }
+.pic-m { width: 50%; }
+.pic-l { width: 100%; }
+.pic-full { margin-left: auto; margin-right: auto; }
+.pic-left  { float: left;  margin: 0 var(--s-4) var(--s-2) 0; }
+.pic-right { float: right; margin: 0 0 var(--s-2) var(--s-4); }
+/* The slots must not trap the float, or nothing wraps. */
+#cv-image, #cv-image-mid, #cv-image-below,
+#analysis-image, #analysis-image-mid, #analysis-image-below { overflow: visible; }
+/* ...and the card must contain it, or the float escapes past the tags and actions. */
+#cv-card::after, #analysis-pane::after { content: ""; display: block; clear: both; }
+/* A floated picture is injected as the first child of the block it wraps, so that block
+   must contain it — otherwise a picture taller than its text spills past the block. */
+#cv-content:has(> .pic-left), #cv-content:has(> .pic-right),
+#cv-anecdote:has(> .pic-left), #cv-anecdote:has(> .pic-right),
+#analysis-tip:has(> .pic-left), #analysis-tip:has(> .pic-right),
+#analysis-anecdote:has(> .pic-left), #analysis-anecdote:has(> .pic-right) { display: flow-root; }
+
 #cv-image:not(:empty) { margin-bottom: var(--s-4); }
+#cv-image-mid:not(:empty), #cv-image-below:not(:empty) { margin: var(--s-3) 0; }
+#analysis-image-mid:not(:empty), #analysis-image-below:not(:empty) { margin: var(--s-3) 0; }
+
+/* ── The admin's placement controls, inside the Picture section ── */
+#image-layout { display: flex; flex-direction: column; gap: var(--s-2); margin-top: var(--s-3); }
+.layout-row { display: flex; align-items: center; gap: var(--s-2); }
+.layout-label { font-size: var(--fs-2xs); color: var(--text-tertiary); min-width: 58px; }
+.seg { display: flex; background: var(--track-bg); border-radius: var(--r-sm); padding: 2px; gap: 2px; }
+.seg-btn {
+  border: none; background: none; cursor: pointer; font-family: inherit;
+  font-size: var(--fs-2xs); color: var(--text-secondary);
+  padding: 4px 10px; border-radius: var(--r-sm);
+  transition: background var(--motion-fast) var(--ease), color var(--motion-fast) var(--ease);
+}
+.seg-btn:hover:not(:disabled) { color: var(--text); }
+.seg-btn.active { background: var(--seg-active); color: var(--text); font-weight: 600; }
+.seg-btn:disabled { opacity: 0.4; cursor: default; }
+.layout-note { font-size: var(--fs-2xs); color: var(--text-tertiary); line-height: 1.5; }
 #analysis-image:not(:empty) { margin-bottom: var(--s-3); }
 /* The network card floats over the graph and exists for quick scanning, so the picture
    is a small thumbnail here — at full width it swallowed the card (half the screen) and
@@ -1431,6 +1472,10 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
   #auth-area .btn, #auth-area .google-btn { padding: 5px 9px; font-size: var(--fs-xs); }
   #auth-area .google-btn .provider { display: none; }   /* "Sign in", not "Sign in with Google" */
   .avatar { width: 22px; height: 22px; }
+
+  /* A narrow float on a phone leaves the text in a two-word column, so floats become
+     full-width bands here and placement (above/between/below) still applies. */
+  .pic-left, .pic-right { float: none; width: 100%; margin: 0 0 var(--s-3); }
 
   /* The tip panel is the full-width base layer; the rest become overlays. */
   #tip-panel { width: 100%; }

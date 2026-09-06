@@ -325,6 +325,10 @@ def tip_with_tags(conn, tip_id):
         # AI-generated illustration, if one has been made for this tip. Served through a
         # route (not /static) so an admin-regenerated copy on the volume can win.
         "image_url": ("/tip-image/" + tip["image_file"]) if tip["image_file"] else "",
+        # Where that picture sits in the card, and how wide it is.
+        "image_pos": tip["image_pos"],
+        "image_align": tip["image_align"],
+        "image_size": tip["image_size"],
     }
 
 
@@ -836,6 +840,62 @@ def quota_charge(conn, name):
         "INSERT INTO api_usage (day, name, count) VALUES (date('now'), ?, 1) "
         "ON CONFLICT(day, name) DO UPDATE SET count = count + 1", (name,))
     conn.commit()
+
+
+# Picture layout. One size scale with one meaning: the picture's width as a fraction of
+# the card (s/m/l = 30/50/100%). Alignment decides what fills the rest — wrapped text when
+# floated, empty margin when full. At "l" a float has nothing left to wrap, so it renders
+# as a band; that degrades predictably rather than surprisingly.
+IMAGE_LAYOUT_FIELDS = {
+    "image_pos":   {"above", "between", "below"},
+    "image_align": {"full", "left", "right"},
+    "image_size":  {"s", "m", "l"},
+}
+
+
+def effective_align(pos, align, has_anecdote):
+    """The alignment a surface should actually render.
+
+    A float wraps what comes AFTER it, so it needs prose after it to wrap. Above the tip
+    there always is; between tip and anecdote only when the anecdote exists; below
+    everything, never — there the float would land beside the buttons instead. With
+    nothing to wrap it becomes a band, keeping the chosen width.
+    """
+    if align == "full":
+        return "full"
+    if pos == "above":
+        return align
+    if pos == "between" and has_anecdote:
+        return align
+    return "full"
+
+
+@app.post("/api/tips/<int:tip_id>/image/layout")
+@admin_required
+def set_image_layout(tip_id):
+    """Where this tip's picture sits and how wide it is. Admin only, costs nothing.
+
+    Each field is optional, so the three controls can save independently without one
+    of them resetting the others."""
+    data = request.get_json(force=True) or {}
+    updates = {}
+    for field, allowed in IMAGE_LAYOUT_FIELDS.items():
+        if field not in data:
+            continue
+        value = (data.get(field) or "").strip()
+        if value not in allowed:
+            return jsonify({"error": "%s must be one of: %s"
+                                     % (field, ", ".join(sorted(allowed)))}), 400
+        updates[field] = value
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM tips WHERE id = ?", (tip_id,)).fetchone():
+            return jsonify({"error": "tip not found"}), 404
+        if updates:
+            conn.execute("UPDATE tips SET %s WHERE id = ?"
+                         % ", ".join("%s = ?" % f for f in updates),
+                         (*updates.values(), tip_id))
+            conn.commit()
+        return jsonify(tip_with_tags(conn, tip_id))
 
 
 MAX_UPLOAD_BYTES = 12 * 1024 * 1024   # generous for a phone photo, small enough to be safe
@@ -1753,17 +1813,26 @@ def delete_path(path_id):
 def share_tip(tip_id):
     with get_db() as conn:
         tip = conn.execute(
-            "SELECT content, anecdote, image_file FROM tips WHERE id = ?", (tip_id,)
+            "SELECT content, anecdote, image_file, image_pos, image_align, image_size "
+            "FROM tips WHERE id = ?", (tip_id,)
         ).fetchone()
     if not tip:
         return "Tip not found.", 404
     content = tip["content"]
     # A shared link previews far better with a picture, so pass an ABSOLUTE url —
-    # og:image is fetched by other sites and won't resolve a relative path.
-    image_url = (url_for("static", filename="tip_images/" + tip["image_file"], _external=True)
+    # og:image is fetched by other sites and won't resolve a relative path. Route it
+    # through /tip-image/ rather than straight at static/: a picture an admin
+    # regenerated or uploaded lives on the volume, and building the URL from static/
+    # meant every one of those 404'd here, link previews included.
+    image_url = (url_for("serve_tip_image", fname=tip["image_file"], _external=True)
                  if tip["image_file"] else "")
+    anecdote = tip["anecdote"] or ""
     return render_template("share.html", tip_id=tip_id, content=content,
-                           anecdote=tip["anecdote"] or "", image_url=image_url)
+                           anecdote=anecdote, image_url=image_url,
+                           image_pos=tip["image_pos"],
+                           image_align=effective_align(tip["image_pos"], tip["image_align"],
+                                                       bool(anecdote)),
+                           image_size=tip["image_size"])
 
 
 # ── Web push: daily-tip notifications ──

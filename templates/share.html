@@ -25,7 +25,18 @@
   }
   .brand { font-family: Georgia, serif; font-weight: 600; font-size: 1rem; margin-bottom: 20px; }
   .brand .p { color: #e5b64a; } .brand .w { color: #f2eee3; }
-  .pic { display: block; width: 100%; height: auto; border-radius: 10px; margin-bottom: 20px; }
+  /* Picture layout, mirroring the app: s/m/l are the picture's width as a fraction of
+     the card, and align decides whether the rest holds wrapped text or empty margin. */
+  .pic { display: block; height: auto; border-radius: 10px; margin-bottom: 20px; width: 100%; }
+  .pic-s { width: 30%; } .pic-m { width: 50%; } .pic-l { width: 100%; }
+  .pic-full { margin-left: auto; margin-right: auto; }
+  .pic-left  { float: left;  margin: 0 20px 12px 0; }
+  .pic-right { float: right; margin: 0 0 12px 20px; }
+  /* A 30% float on a phone leaves a two-word column, so floats become bands there. */
+  @media (max-width: 700px) {
+    .pic-left, .pic-right { float: none; width: 100%; margin: 0 0 20px; }
+  }
+  .card::after { content: ""; display: block; clear: both; }
   .tip { font-size: 1.35rem; line-height: 1.5; font-weight: 500; }
   .anecdote { margin-top: 14px; font-size: 0.92rem; line-height: 1.6; color: #a2abc2;
     border-left: 3px solid #5a8a2a; padding-left: 12px; }
@@ -40,9 +51,12 @@
 <body>
   <div class="card">
     <div class="brand"><span class="p">Practical</span> <span class="w">Wisdom</span></div>
-    {% if image_url %}<img class="pic" src="{{ image_url }}" alt="">{% endif %}
+    {% set pic %}{% if image_url %}<img class="pic pic-{{ image_align }} pic-{{ image_size }}" src="{{ image_url }}" alt="">{% endif %}{% endset %}
+    {% if image_pos == 'above' %}{{ pic }}{% endif %}
     <div class="tip">{{ content }}</div>
+    {% if image_pos == 'between' %}{{ pic }}{% endif %}
     {% if anecdote %}<div class="anecdote">{{ anecdote }}</div>{% endif %}
+    {% if image_pos == 'below' %}{{ pic }}{% endif %}
     <a class="open" href="/?tip={{ tip_id }}">Explore this tip in the app →</a>
     <div class="sub">A library of short, practical wisdom — explore, save, and live by it.</div>
   </div>
