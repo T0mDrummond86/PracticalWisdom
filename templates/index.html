@@ -135,7 +135,9 @@
           <div class="cv-swipe-badge skip" aria-hidden="true">Skip</div>
           <div id="cv-image"></div>
           <div id="cv-content"></div>
+          <div id="cv-image-mid"></div>
           <div id="cv-anecdote"></div>
+          <div id="cv-image-below"></div>
           <div id="cv-video"></div>
           <div id="cv-tags"></div>
           <div id="cv-actions"></div>
@@ -214,6 +216,35 @@
         <input id="image-upload-file" type="file" accept="image/*" hidden>
       </div>
       <div id="image-editor-status"></div>
+      <div id="image-layout" hidden>
+        <div class="layout-row">
+          <span class="layout-label">Position</span>
+          <div class="seg" role="group" aria-label="Picture position">
+            <button class="seg-btn" data-layout="image_pos" data-value="above">Above</button>
+            <button class="seg-btn" data-layout="image_pos" data-value="between">Between</button>
+            <button class="seg-btn" data-layout="image_pos" data-value="below">Below</button>
+          </div>
+        </div>
+        <div class="layout-row">
+          <span class="layout-label">Align</span>
+          <div class="seg" role="group" aria-label="Picture alignment">
+            <button class="seg-btn" data-layout="image_align" data-value="full">Full</button>
+            <button class="seg-btn" data-layout="image_align" data-value="left">Left</button>
+            <button class="seg-btn" data-layout="image_align" data-value="right">Right</button>
+          </div>
+        </div>
+        <div class="layout-row">
+          <span class="layout-label">Width</span>
+          <div class="seg" role="group" aria-label="Picture width">
+            <button class="seg-btn" data-layout="image_size" data-value="s">30%</button>
+            <button class="seg-btn" data-layout="image_size" data-value="m">50%</button>
+            <button class="seg-btn" data-layout="image_size" data-value="l">100%</button>
+          </div>
+        </div>
+        <p class="layout-note">Left and right let the text wrap around the picture. They
+          become full-width bands on a phone, where a narrow float leaves the text in a
+          two-word column. “Between” sits between the tip and its anecdote.</p>
+      </div>
     </details>
     <details class="editor-section" id="analysis-editor">
       <summary><span class="section-name">“Choose an angle” text</span><span class="section-state"></span></summary>
@@ -254,7 +285,9 @@
     </div>
     <div id="analysis-image"></div>
     <div id="analysis-tip"></div>
+    <div id="analysis-image-mid"></div>
     <div id="analysis-anecdote"></div>
+    <div id="analysis-image-below"></div>
     <div id="analysis-video"></div>
     <div id="tip-tools">
       <button class="btn secondary" id="share-tip-btn" title="Copy a public link to this tip">Share</button>

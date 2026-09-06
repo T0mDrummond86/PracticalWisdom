@@ -700,6 +700,131 @@ def test_tip_images_sync_links_and_clears(client, app_module, monkeypatch, tmp_p
     assert client.get("/api/tips").get_json()[0]["image_url"] == "" or True
 
 
+# ── Per-tip picture layout: where the picture sits and how wide it is ──
+
+def layout(client, tid, token, **kw):
+    return client.post("/api/tips/%d/image/layout" % tid, json=kw,
+                       headers={"X-CSRF-Token": token})
+
+
+def test_tip_layout_defaults_leave_existing_tips_unchanged(client, app_module):
+    """Every tip predates this feature, so the defaults must reproduce today's rendering:
+    a full-width picture above the text."""
+    tid = add_tip(app_module, "Measure what matters")
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert tip["image_pos"] == "above"
+    assert tip["image_align"] == "full"
+    assert tip["image_size"] == "m"
+
+
+def test_tip_layout_round_trips(client, app_module):
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    r = layout(client, tid, token, image_pos="between", image_align="right", image_size="s")
+    assert r.status_code == 200
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert (tip["image_pos"], tip["image_align"], tip["image_size"]) == ("between", "right", "s")
+
+
+def test_tip_layout_rejects_values_outside_the_vocabulary(client, app_module):
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    for bad in ({"image_pos": "sideways"}, {"image_align": "middle"}, {"image_size": "xxl"}):
+        assert layout(client, tid, token, **bad).status_code == 400
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert (tip["image_pos"], tip["image_align"], tip["image_size"]) == ("above", "full", "m")
+
+
+def test_tip_layout_accepts_a_partial_update(client, app_module):
+    """The three controls save independently, so one field must not reset the others."""
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    layout(client, tid, token, image_align="left", image_size="s")
+    layout(client, tid, token, image_pos="below")
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert (tip["image_pos"], tip["image_align"], tip["image_size"]) == ("below", "left", "s")
+
+
+def test_tip_layout_is_admin_only(client, app_module):
+    tid = add_tip(app_module, "Measure what matters")
+    token = get_csrf(client)
+    assert layout(client, tid, token, image_pos="below").status_code == 403
+
+
+def test_tip_layout_404s_for_a_missing_tip(client, app_module):
+    token = login_admin(client)
+    r = layout(client, 999999, token, image_pos="below")
+    # Assert on our own JSON 404, not Flask's HTML one for an unrouted URL — otherwise
+    # this passes before the endpoint exists and proves nothing.
+    assert r.status_code == 404 and r.get_json()["error"] == "tip not found"
+
+
+def test_share_page_carries_the_layout(client, app_module, monkeypatch, tmp_path):
+    """The share page is the one surface strangers see, and it follows the tip's setting."""
+    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Measure what matters")
+    (tmp_path / ("%d.webp" % tid)).write_bytes(b"x")
+    token = login_admin(client)
+    client.post("/api/tips/images/sync", headers={"X-CSRF-Token": token})
+    layout(client, tid, token, image_align="right", image_size="s")
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert "pic-right" in html and "pic-s" in html
+
+
+def test_float_falls_back_to_a_band_with_no_text_to_wrap(client, app_module, monkeypatch,
+                                                          tmp_path):
+    """A float wraps what FOLLOWS it. Placed below everything — or between a tip and an
+    anecdote that does not exist — there is no prose after it, so it lands beside the
+    call-to-action instead. In that case it renders as a band."""
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    tid = add_tip(app_module, "Measure what matters")     # deliberately no anecdote
+    fname = "%d.webp" % tid
+    (tmp_path / fname).write_bytes(b"x")
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tid))
+        conn.commit()
+    token = login_admin(client)
+    import re
+
+    def img_classes(tid):
+        html = client.get("/tip/%d" % tid).get_data(as_text=True)
+        m = re.search(r'<img class="([^"]*)"', html)
+        return m.group(1) if m else ""
+
+    for pos in ("below", "between"):
+        layout(client, tid, token, image_pos=pos, image_align="right", image_size="s")
+        cls = img_classes(tid)
+        assert "pic-right" not in cls, "%s has nothing after it to wrap (got %r)" % (pos, cls)
+        assert "pic-full" in cls and "pic-s" in cls     # still honours the chosen width
+    # ...but with an anecdote to wrap, "between" floats as asked.
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET anecdote = 'A story.' WHERE id = ?", (tid,))
+        conn.commit()
+    layout(client, tid, token, image_pos="between", image_align="right")
+    assert "pic-right" in img_classes(tid)
+
+
+def test_share_page_serves_a_regenerated_picture(client, app_module, monkeypatch, tmp_path):
+    """Admin-made pictures live on the volume, not in static/. The share page built its
+    URL from static/ directly, so every regenerated or uploaded picture 404'd there —
+    including the og:image that other sites fetch for the link preview."""
+    shipped, volume = tmp_path / "shipped", tmp_path / "volume"
+    shipped.mkdir(); volume.mkdir()
+    monkeypatch.setattr(app_module, "TIP_IMAGE_DIR", str(shipped))
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(volume))
+    tid = add_tip(app_module, "Measure what matters")
+    fname = "%d.webp" % tid
+    (volume / fname).write_bytes(b"RIFF0000WEBPfake")   # only on the volume
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tid))
+        conn.commit()
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert "/static/tip_images/" not in html, "must not bypass the override-aware route"
+    assert "/tip-image/" + fname in html
+    # and the url it points at actually serves the bytes
+    assert client.get("/tip-image/" + fname).status_code == 200
+
+
 # ── Exposure limits on the paid, publicly reachable routes ──
 # Semantic search, Ask and Explore all reach a metered API and none of them require a
 # login. Two layers guard them: a per-IP burst window, and a global daily ceiling.
