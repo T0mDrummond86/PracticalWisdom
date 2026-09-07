@@ -769,6 +769,79 @@ def test_a_marker_with_no_picture_just_disappears(client, app_module):
     assert marker not in html and "<img" not in html
 
 
+# ── The marker works in the anecdote as well as the tip ──
+
+def anecdote_tip(app_module, content, anecdote, tmp_path):
+    tid = add_tip(app_module, content)
+    fname = "%d.webp" % tid
+    (tmp_path / fname).write_bytes(b"x")
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET anecdote = ?, image_file = ?, image_pos = 'inline' "
+                     "WHERE id = ?", (anecdote, fname, tid))
+        conn.commit()
+    return tid
+
+
+def test_share_page_splits_the_anecdote_at_the_marker(client, app_module, monkeypatch,
+                                                      tmp_path):
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    m = app_module.PICTURE_MARKER
+    tid = anecdote_tip(app_module, "A plain tip", "Story before " + m + " story after",
+                       tmp_path)
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert m not in html
+    body = html[html.index('class="anecdote'):]
+    assert body.index("Story before") < body.index("<img") < body.index("story after")
+    # ...and the tip's own words are left alone
+    tipblock = html[html.index('class="tip'):html.index('class="anecdote')]
+    assert "<img" not in tipblock
+
+
+def test_marker_is_stripped_from_an_anecdote_shown_as_prose(client, app_module):
+    m = app_module.PICTURE_MARKER
+    tid = add_tip(app_module, "A plain tip")
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET anecdote = ? WHERE id = ?",
+                     ("Story " + m + " continues", tid))
+        conn.commit()
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert m in tip["anecdote"], "the API returns the raw text so the editor can show it"
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert m not in html and "Story continues" in html
+
+
+def test_anecdote_marker_is_stripped_before_embedding(app_module):
+    import embeddings
+    m = app_module.PICTURE_MARKER
+    plain = embeddings._text_for("A tip", "Story continues")
+    marked = embeddings._text_for("A tip", "Story " + m + " continues")
+    assert m not in marked and marked == plain
+
+
+def test_a_marker_in_both_fields_resolves_to_the_tip(client, app_module, monkeypatch,
+                                                     tmp_path):
+    """One picture, one place. The tip's own words win and the stray copy is stripped."""
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    m = app_module.PICTURE_MARKER
+    tid = anecdote_tip(app_module, "Tip " + m + " words", "Story " + m + " continues",
+                       tmp_path)
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert m not in html
+    assert html.count("<img") == 1
+    tipblock = html[html.index('class="tip'):html.index('class="anecdote')]
+    assert "<img" in tipblock
+
+
+def test_print_page_splits_an_anecdote_marker(client, app_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    m = app_module.PICTURE_MARKER
+    anecdote_tip(app_module, "A plain tip", "Story before " + m + " story after", tmp_path)
+    html = client.get("/print").get_data(as_text=True)
+    assert m not in html
+    body = html[html.index("Story before"):]
+    assert body.index("<img") < body.index("story after")
+
+
 # ── The printable page ──
 
 def test_print_page_lists_every_tip(client, app_module):

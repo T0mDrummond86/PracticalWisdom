@@ -132,6 +132,7 @@ def _text_for(content, anecdote):
     """
     import app  # local import: app imports this module at load time
     content = app.strip_marker(content)
+    anecdote = app.strip_marker(anecdote)
     parts = [(content or "").strip()]
     if anecdote and anecdote.strip():
         parts.append(anecdote.strip())

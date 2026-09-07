@@ -871,6 +871,20 @@ def split_at_marker(text):
     return (before.strip(), strip_marker(after))
 
 
+def inline_field(content, anecdote):
+    """Which text carries the picture: "content", "anecdote", or None.
+
+    The marker's location is the source of truth — inline is wherever you put it, not a
+    separate setting that could disagree with the text. One picture means one place, so
+    if a marker ends up in both, the tip's own words win and the stray copy is stripped.
+    """
+    if PICTURE_MARKER in (content or ""):
+        return "content"
+    if PICTURE_MARKER in (anecdote or ""):
+        return "anecdote"
+    return None
+
+
 IMAGE_LAYOUT_FIELDS = {
     "image_pos":   {"above", "between", "below", "inline"},
     "image_align": {"full", "left", "right"},
@@ -1844,10 +1858,6 @@ def share_tip(tip_id):
     if not tip:
         return "Tip not found.", 404
     content = tip["content"]
-    # og:description and the preview text are prose, so they never see the marker.
-    description = strip_marker(content)
-    before, after = split_at_marker(content)
-    inline = tip["image_pos"] == "inline" and after is not None
     # A shared link previews far better with a picture, so pass an ABSOLUTE url —
     # og:image is fetched by other sites and won't resolve a relative path. Route it
     # through /tip-image/ rather than straight at static/: a picture an admin
@@ -1855,13 +1865,22 @@ def share_tip(tip_id):
     # meant every one of those 404'd here, link previews included.
     image_url = (url_for("serve_tip_image", fname=tip["image_file"], _external=True)
                  if tip["image_file"] else "")
-    anecdote = tip["anecdote"] or ""
+    # og:description and the preview text are prose, so they never see the marker.
+    description = strip_marker(content)
+    field = inline_field(content, tip["anecdote"])
+    inline_ok = tip["image_pos"] == "inline" and bool(image_url)
+    inline = inline_ok and field == "content"
+    inline_anec = inline_ok and field == "anecdote"
+    before, after = split_at_marker(content) if inline else (description, None)
+    anec_before, anec_after = (split_at_marker(tip["anecdote"]) if inline_anec
+                               else (strip_marker(tip["anecdote"]), None))
     return render_template("share.html", tip_id=tip_id, content=description,
                            content_before=before, content_after=after, inline=inline,
-                           anecdote=anecdote, image_url=image_url,
+                           anecdote=anec_before or "", anecdote_after=anec_after,
+                           inline_anecdote=inline_anec, image_url=image_url,
                            image_pos=tip["image_pos"],
                            image_align=effective_align(tip["image_pos"], tip["image_align"],
-                                                       bool(anecdote)),
+                                                       bool(tip["anecdote"])),
                            image_size=tip["image_size"])
 
 
@@ -1890,14 +1909,24 @@ def print_tips():
             continue
         primary = next((n for n, tier in tags_by_tip.get(r["id"], []) if tier == "primary"),
                        "Untagged")
-        before, after = split_at_marker(r["content"])
+        field = inline_field(r["content"], r["anecdote"])
+        has_pic = bool(r["image_file"])
+        inline_ok = r["image_pos"] == "inline" and has_pic
+        in_content = inline_ok and field == "content"
+        in_anecdote = inline_ok and field == "anecdote"
+        before, after = (split_at_marker(r["content"]) if in_content
+                         else (strip_marker(r["content"]), None))
+        anec_before, anec_after = (split_at_marker(r["anecdote"]) if in_anecdote
+                                   else (strip_marker(r["anecdote"]), None))
         groups.setdefault(primary, []).append({
             "id": r["id"],
             "content": strip_marker(r["content"]),
             "content_before": before,
             "content_after": after,
-            "inline": r["image_pos"] == "inline" and after is not None,
-            "anecdote": r["anecdote"] or "",
+            "inline": in_content,
+            "anecdote": anec_before or "",
+            "anecdote_after": anec_after,
+            "inline_anecdote": in_anecdote,
             "image_url": ("/tip-image/" + r["image_file"]) if r["image_file"] else "",
             "align": effective_align(r["image_pos"], r["image_align"], bool(r["anecdote"])),
             "size": r["image_size"],

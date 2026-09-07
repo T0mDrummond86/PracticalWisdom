@@ -54,7 +54,7 @@
   .pic-s { width: 30%; } .pic-m { width: 50%; } .pic-l { width: 100%; }
   .pic-left  { float: left;  margin: 0 16px 8px 0; }
   .pic-right { float: right; margin: 0 0 8px 16px; }
-  .words.has-inline { display: flow-root; }
+  .words.has-inline, .anecdote.has-inline { display: flow-root; }
   body:not(.with-pictures) .pic { display: none; }
 
   @media print {
@@ -89,7 +89,12 @@
           {%- else %}{{ t.content }}{% endif -%}
         </div>
         {% if t.pos == 'between' %}{{ pic }}{% endif %}
-        {% if t.anecdote %}<div class="anecdote">{{ t.anecdote }}</div>{% endif %}
+        {% if t.anecdote %}
+          <div class="anecdote{% if t.inline_anecdote %} has-inline{% endif %}">
+            {%- if t.inline_anecdote %}{{ t.anecdote }} {{ pic }} {{ t.anecdote_after }}
+            {%- else %}{{ t.anecdote }}{% endif -%}
+          </div>
+        {% endif %}
         {% if t.pos == 'below' %}{{ pic }}{% endif %}
         {% if t.tags %}<div class="tags">{{ t.tags|join(' · ') }}</div>{% endif %}
       </div>

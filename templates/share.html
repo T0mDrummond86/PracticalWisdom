@@ -37,7 +37,7 @@
     .pic-left, .pic-right { float: none; width: 100%; margin: 0 0 20px; }
   }
   .card::after { content: ""; display: block; clear: both; }
-  .tip.has-inline { display: flow-root; }   /* contain a picture taller than its text */
+  .tip.has-inline, .anecdote.has-inline { display: flow-root; }  /* contain a tall picture */
   .tip { font-size: 1.35rem; line-height: 1.5; font-weight: 500; }
   .anecdote { margin-top: 14px; font-size: 0.92rem; line-height: 1.6; color: #a2abc2;
     border-left: 3px solid #5a8a2a; padding-left: 12px; }
@@ -61,7 +61,12 @@
       {%- else %}{{ content }}{% endif -%}
     </div>
     {% if image_pos == 'between' %}{{ pic }}{% endif %}
-    {% if anecdote %}<div class="anecdote">{{ anecdote }}</div>{% endif %}
+    {% if anecdote %}
+      <div class="anecdote{% if inline_anecdote %} has-inline{% endif %}">
+        {%- if inline_anecdote %}{{ anecdote }} {{ pic }} {{ anecdote_after }}
+        {%- else %}{{ anecdote }}{% endif -%}
+      </div>
+    {% endif %}
     {% if image_pos == 'below' %}{{ pic }}{% endif %}
     <a class="open" href="/?tip={{ tip_id }}">Explore this tip in the app →</a>
     <div class="sub">A library of short, practical wisdom — explore, save, and live by it.</div>
