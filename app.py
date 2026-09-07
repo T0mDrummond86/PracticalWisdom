@@ -846,8 +846,33 @@ def quota_charge(conn, name):
 # the card (s/m/l = 30/50/100%). Alignment decides what fills the rest — wrapped text when
 # floated, empty margin when full. At "l" a float has nothing left to wrap, so it renders
 # as a band; that degrades predictably rather than surprisingly.
+# Where an inline picture goes inside a tip's own words. Deliberately wordless: the FTS
+# index is external-content over tips.content, so a marker containing a real token would
+# surface every tip carrying one whenever that word was searched, and fixing that would
+# mean rebuilding the index rather than picking a better marker. This tokenises to
+# nothing, so the index needs no change at all.
+PICTURE_MARKER = "[[#]]"
+
+
+def strip_marker(text):
+    """A tip's words without the picture marker, for anywhere text is read as prose."""
+    if not text or PICTURE_MARKER not in text:
+        return text or ""
+    # Close the seam rather than leaving the double space the marker sat in.
+    return " ".join((text or "").replace(PICTURE_MARKER, " ").split())
+
+
+def split_at_marker(text):
+    """(before, after) around the first marker; (text, None) when there isn't one."""
+    if not text or PICTURE_MARKER not in text:
+        return (text or "", None)
+    before, _, after = (text or "").partition(PICTURE_MARKER)
+    # Any further markers are surplus: one picture, one place.
+    return (before.strip(), strip_marker(after))
+
+
 IMAGE_LAYOUT_FIELDS = {
-    "image_pos":   {"above", "between", "below"},
+    "image_pos":   {"above", "between", "below", "inline"},
     "image_align": {"full", "left", "right"},
     "image_size":  {"s", "m", "l"},
 }
@@ -863,7 +888,7 @@ def effective_align(pos, align, has_anecdote):
     """
     if align == "full":
         return "full"
-    if pos == "above":
+    if pos in ("above", "inline"):
         return align
     if pos == "between" and has_anecdote:
         return align
@@ -1819,6 +1844,10 @@ def share_tip(tip_id):
     if not tip:
         return "Tip not found.", 404
     content = tip["content"]
+    # og:description and the preview text are prose, so they never see the marker.
+    description = strip_marker(content)
+    before, after = split_at_marker(content)
+    inline = tip["image_pos"] == "inline" and after is not None
     # A shared link previews far better with a picture, so pass an ABSOLUTE url —
     # og:image is fetched by other sites and won't resolve a relative path. Route it
     # through /tip-image/ rather than straight at static/: a picture an admin
@@ -1827,12 +1856,57 @@ def share_tip(tip_id):
     image_url = (url_for("serve_tip_image", fname=tip["image_file"], _external=True)
                  if tip["image_file"] else "")
     anecdote = tip["anecdote"] or ""
-    return render_template("share.html", tip_id=tip_id, content=content,
+    return render_template("share.html", tip_id=tip_id, content=description,
+                           content_before=before, content_after=after, inline=inline,
                            anecdote=anecdote, image_url=image_url,
                            image_pos=tip["image_pos"],
                            image_align=effective_align(tip["image_pos"], tip["image_align"],
                                                        bool(anecdote)),
                            image_size=tip["image_size"])
+
+
+@app.get("/print")
+def print_tips():
+    """A printable document of the library. Open, like the library itself.
+
+    ?tags=a,b narrows it to those tags (matching what the app is filtered to), and the
+    picture toggle lives on the page rather than in the URL so switching it costs no
+    round trip. Tips are grouped under their primary tag, which is the order a reader
+    of the printed page would expect.
+    """
+    wanted = [t.strip() for t in (request.args.get("tags") or "").split(",") if t.strip()]
+    with get_db() as conn:
+        rows = conn.execute("SELECT id, content, anecdote, image_file, image_pos, "
+                            "image_align, image_size FROM tips ORDER BY id").fetchall()
+        tags_by_tip = {}
+        for r in conn.execute(
+                "SELECT tt.tip_id, t.name, t.tier FROM tip_tags tt JOIN tags t ON t.id = tt.tag_id"):
+            tags_by_tip.setdefault(r["tip_id"], []).append((r["name"], r["tier"]))
+
+    groups = {}
+    for r in rows:
+        names = [n for n, _ in tags_by_tip.get(r["id"], [])]
+        if wanted and not any(n in wanted for n in names):
+            continue
+        primary = next((n for n, tier in tags_by_tip.get(r["id"], []) if tier == "primary"),
+                       "Untagged")
+        before, after = split_at_marker(r["content"])
+        groups.setdefault(primary, []).append({
+            "id": r["id"],
+            "content": strip_marker(r["content"]),
+            "content_before": before,
+            "content_after": after,
+            "inline": r["image_pos"] == "inline" and after is not None,
+            "anecdote": r["anecdote"] or "",
+            "image_url": ("/tip-image/" + r["image_file"]) if r["image_file"] else "",
+            "align": effective_align(r["image_pos"], r["image_align"], bool(r["anecdote"])),
+            "size": r["image_size"],
+            "pos": r["image_pos"],
+            "tags": names,
+        })
+    total = sum(len(v) for v in groups.values())
+    return render_template("print.html", groups=sorted(groups.items()), total=total,
+                           filtered=wanted, show_pictures=request.args.get("pics") == "1")
 
 
 # ── Web push: daily-tip notifications ──

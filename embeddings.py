@@ -125,7 +125,13 @@ def embed_texts(texts):
 
 # ── text → stored vector ────────────────────────────────────────────────────
 def _text_for(content, anecdote):
-    """The text we actually embed for a tip: its content, plus the anecdote if present."""
+    """The text we actually embed for a tip: its content, plus the anecdote if present.
+
+    The inline-picture marker is removed first: it is layout, not meaning, and a tip must
+    embed to the same point whether or not its picture happens to sit inside the words.
+    """
+    import app  # local import: app imports this module at load time
+    content = app.strip_marker(content)
     parts = [(content or "").strip()]
     if anecdote and anecdote.strip():
         parts.append(anecdote.strip())

@@ -700,6 +700,97 @@ def test_tip_images_sync_links_and_clears(client, app_module, monkeypatch, tmp_p
     assert client.get("/api/tips").get_json()[0]["image_url"] == "" or True
 
 
+# ── Inline picture placement: a marker inside the tip's own text ──
+# The marker lives in tips.content, which is plain text everywhere, so it must not leak
+# into anything that reads that text as prose: search, embeddings, previews, or the API.
+
+def test_marker_contains_nothing_the_text_index_will_tokenise(client, app_module):
+    """The marker is deliberately wordless. If it tokenised, every tip carrying one would
+    surface for whatever word it contained, and fixing that would mean rebuilding the
+    external-content FTS index rather than choosing a better token."""
+    marker = app_module.PICTURE_MARKER
+    assert not any(ch.isalnum() for ch in marker), marker
+    tid = add_tip(app_module, "Measure what matters " + marker)
+    # the tip is still findable by its real words...
+    hits = client.get("/api/tips/fts?q=measure").get_json()["results"]
+    assert any(t["id"] == tid for t in hits)
+    # ...and searching the marker itself finds nothing, because it indexed as nothing
+    assert client.get("/api/tips/fts?q=" + marker).get_json()["results"] == []
+
+
+def test_marker_is_stripped_from_the_text_that_gets_embedded(client, app_module):
+    import embeddings
+    marker = app_module.PICTURE_MARKER
+    plain = embeddings._text_for("Measure what matters", "")
+    withmark = embeddings._text_for("Measure " + marker + " what matters", "")
+    assert marker not in withmark
+    assert withmark == plain, "the marker must not change what a tip means to the model"
+
+
+def test_inline_is_a_valid_position(client, app_module):
+    tid = add_tip(app_module, "Measure what matters")
+    token = login_admin(client)
+    assert layout(client, tid, token, image_pos="inline").status_code == 200
+    tip = [t for t in client.get("/api/tips").get_json() if t["id"] == tid][0]
+    assert tip["image_pos"] == "inline"
+
+
+def test_share_page_splits_the_text_at_the_marker(client, app_module, monkeypatch, tmp_path):
+    monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
+    marker = app_module.PICTURE_MARKER
+    tid = add_tip(app_module, "Before " + marker + " after")
+    fname = "%d.webp" % tid
+    (tmp_path / fname).write_bytes(b"x")
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE tips SET image_file = ? WHERE id = ?", (fname, tid))
+        conn.commit()
+    token = login_admin(client)
+    layout(client, tid, token, image_pos="inline")
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert marker not in html, "the marker itself must never reach the page"
+    body = html[html.index('class="tip'):]
+    assert body.index("Before") < body.index("<img") < body.index("after")
+
+
+def test_marker_never_reaches_a_preview_or_description(client, app_module):
+    marker = app_module.PICTURE_MARKER
+    tid = add_tip(app_module, "Measure " + marker + " what matters")
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert marker not in html
+    assert "Measure what matters" in html      # and the seam is closed up, not left double-spaced
+
+
+def test_a_marker_with_no_picture_just_disappears(client, app_module):
+    marker = app_module.PICTURE_MARKER
+    tid = add_tip(app_module, "Measure " + marker + " what matters")
+    token = login_admin(client)
+    layout(client, tid, token, image_pos="inline")
+    html = client.get("/tip/%d" % tid).get_data(as_text=True)
+    assert marker not in html and "<img" not in html
+
+
+# ── The printable page ──
+
+def test_print_page_lists_every_tip(client, app_module):
+    a = add_tip(app_module, "Measure what matters", ["moral"])
+    b = add_tip(app_module, "Done beats perfect", ["physical"])
+    html = client.get("/print").get_data(as_text=True)
+    assert "Measure what matters" in html and "Done beats perfect" in html
+
+
+def test_print_page_honours_a_tag_filter(client, app_module):
+    add_tip(app_module, "Measure what matters", ["moral"])
+    add_tip(app_module, "Done beats perfect", ["physical"])
+    html = client.get("/print?tags=moral").get_data(as_text=True)
+    assert "Measure what matters" in html and "Done beats perfect" not in html
+
+
+def test_print_page_strips_the_marker(client, app_module):
+    marker = app_module.PICTURE_MARKER
+    add_tip(app_module, "Measure " + marker + " what matters", ["moral"])
+    assert marker not in client.get("/print").get_data(as_text=True)
+
+
 # ── Per-tip picture layout: where the picture sits and how wide it is ──
 
 def layout(client, tid, token, **kw):

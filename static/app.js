@@ -114,6 +114,12 @@
   }
   const flipSuggestMode = () => setSuggestMode(suggestMode === "meaning" ? "tags" : "meaning");
 
+  // The printable document, carrying the current tag filter so it prints what you see.
+  function openPrintView() {
+    const q = activeTags.length ? "?tags=" + encodeURIComponent(activeTags.join(",")) : "";
+    window.open("/print" + q, "_blank", "noopener");
+  }
+
   function renderAuth() {
     const el = $("auth-area");
     const parts = [];
@@ -136,6 +142,7 @@
             `<div class="account-menu-header">${sub}</div>` +
             `<button class="account-item" id="suggest-tip-btn" role="menuitem" title="Suggest a tip for review">✍ Suggest a tip</button>` +
             `<button class="account-item" id="help-btn" role="menuitem">❔ Help &amp; how-to</button>` +
+            `<button class="account-item" id="print-btn" role="menuitem">Print tips…</button>` +
             // Admin access lives here — you must be signed in first to reach it.
             (isAdmin
               ? `<button class="account-item account-item-admin" id="admin-logout-btn" role="menuitem"><span class="admin-badge">ADMIN</span> Exit admin mode</button>`
@@ -185,6 +192,7 @@
         b.onclick = () => applyTheme(b.dataset.themeChoice));
       $("logout-btn").onclick = googleSignOut;
       $("suggest-tip-btn").onclick = () => { closeAccountMenu(); openSuggest(); };
+      $("print-btn").onclick = openPrintView;
       $("help-btn").onclick = () => { closeAccountMenu(); openHelp(); };
       const pushBtn = $("push-toggle-btn");
       pushBtn.onclick = () => togglePush(pushBtn);
@@ -484,11 +492,31 @@
         <div class="vote-col">
           ${tipControlsHTML(tip)}
         </div>
-        <div class="tip-main"><div class="tip-content">${escHtml(tip.content)}</div>${tipFlagsHTML(tip)}</div>`;
+        <div class="tip-main"><div class="tip-content">${escHtml(displayText(tip.content))}</div>${tipFlagsHTML(tip)}</div>`;
       card.onclick = () => selectTip(tip);
       bindTipControls(card, tip);
       list.appendChild(card);
     });
+  }
+
+  // Where an inline picture sits inside a tip's own words. Kept in sync with
+  // PICTURE_MARKER in app.py; wordless so the text index ignores it.
+  const PICTURE_MARKER = "[[#]]";
+
+  // A tip's words without the marker, for every surface that shows them as prose: list
+  // rows, search results, the network card, the path picker, stats. Anywhere that misses
+  // this shows a literal "[[#]]" to the reader.
+  function displayText(text) {
+    if (!text || text.indexOf(PICTURE_MARKER) === -1) return text || "";
+    return text.split(PICTURE_MARKER).join(" ").replace(/\s+/g, " ").trim();
+  }
+
+  // (before, after) around the first marker; after is null when there isn't one.
+  function splitAtMarker(text) {
+    const i = (text || "").indexOf(PICTURE_MARKER);
+    if (i === -1) return [text || "", null];
+    return [(text || "").slice(0, i).trim(),
+            displayText((text || "").slice(i + PICTURE_MARKER.length))];
   }
 
   function escHtml(s) {
@@ -585,7 +613,7 @@
   function effectiveAlign(tip) {
     const align = tip.image_align || "full";
     if (align === "full") return "full";
-    if (tip.image_pos === "above") return align;
+    if (tip.image_pos === "above" || tip.image_pos === "inline") return align;
     if (tip.image_pos === "between" && (tip.anecdote || "").trim()) return align;
     return "full";
   }
@@ -598,6 +626,24 @@
     "cv-image":       { above: "cv-content",   between: "cv-anecdote" },
     "analysis-image": { above: "analysis-tip", between: "analysis-anecdote" },
   };
+
+  // Put a tip's words into a text element, splitting them around an inline picture.
+  // Every other position leaves the text alone and renderTipImage places the picture.
+  function renderTipText(elId, tip) {
+    const el = $(elId);
+    if (!el) return;
+    const [before, after] = splitAtMarker(tip.content);
+    if (!(tip.image_pos === "inline" && after !== null && tip.image_url)) {
+      el.textContent = displayText(tip.content);
+      el.classList.remove("has-inline");
+      return;
+    }
+    el.classList.add("has-inline");
+    el.innerHTML = `${escHtml(before)} `
+      + `<img class="tip-image pic-${escHtml(effectiveAlign(tip))} `
+      + `pic-${escHtml(tip.image_size || "m")}" src="${escHtml(tip.image_url)}" alt="">`
+      + ` ${escHtml(after)}`;
+  }
 
   function renderTipImage(containerId, tip) {
     const hosts = IMAGE_HOSTS[containerId];
@@ -614,6 +660,7 @@
       if (el) el.querySelectorAll(":scope > img.tip-image").forEach(n => n.remove());
     });
     if (!(tip && tip.image_url)) return;
+    if (pos === "inline") return;      // renderTipText owns this one
 
     const img = `<img class="tip-image pic-${escHtml(align)} pic-${escHtml(tip.image_size || "m")}"`
       + ` src="${escHtml(tip.image_url)}" alt="">`;
@@ -746,7 +793,13 @@
     const current = { image_pos: tip.image_pos || "above",
                       image_align: tip.image_align || "full",
                       image_size: tip.image_size || "m" };
+    // "Inline" is not something you pick from a list — it is wherever you put the marker.
+    const placed = ($("detail-content").value || "").indexOf(PICTURE_MARKER) !== -1;
+    $("place-picture-btn").disabled = !tip.image_url;
+    $("place-picture-btn").textContent = placed ? "Move here" : "Place here";
+    $("unplace-picture-btn").hidden = !placed;
     box.querySelectorAll(".seg-btn").forEach(b => {
+      if (b.dataset.value === "inline") { b.disabled = true; }
       b.classList.toggle("active", current[b.dataset.layout] === b.dataset.value);
       // Width is meaningless for a band that is already the full card, and a float at
       // 100% has nothing to wrap — say so by disabling rather than by silently ignoring.
@@ -761,6 +814,32 @@
           : "";
       }
     });
+  }
+
+  // Insert the marker at the caret in the tip textarea. The text is a normal edit, so it
+  // is saved by the tip's own Save; only the position flag saves immediately.
+  function placePictureAtCursor() {
+    const ta = $("detail-content");
+    if (!selectedTip || !selectedTip.image_url) return;
+    const value = ta.value.replace(PICTURE_MARKER, "").replace(/\s+/g, " ");
+    const at = Math.min(ta.selectionStart ?? value.length, value.length);
+    const before = value.slice(0, at).replace(/\s+$/, "");
+    const after = value.slice(at).replace(/^\s+/, "");
+    ta.value = `${before} ${PICTURE_MARKER} ${after}`.trim();
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = (before + " " + PICTURE_MARKER).length + 1;
+    selectedTip.content = ta.value;
+    setImageLayout("image_pos", "inline");
+    const status = $("image-editor-status");
+    status.style.color = "var(--text-tertiary)";
+    status.textContent = "Picture placed in the text — Save the tip to keep it there.";
+  }
+
+  function removePictureFromText() {
+    const ta = $("detail-content");
+    ta.value = displayText(ta.value);
+    if (selectedTip) selectedTip.content = ta.value;
+    setImageLayout("image_pos", "above");
   }
 
   async function setImageLayout(field, value) {
@@ -781,6 +860,8 @@
     const btn = e.target.closest(".seg-btn");
     if (btn && !btn.disabled) setImageLayout(btn.dataset.layout, btn.dataset.value);
   });
+  $("place-picture-btn").onclick = placePictureAtCursor;
+  $("unplace-picture-btn").onclick = removePictureFromText;
 
   async function remakeTipImage(mode) {
     if (!selectedTip) return;
@@ -1056,7 +1137,7 @@
           ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main">
-          <div class="tip-content">${escHtml(tip.content)}</div>
+          <div class="tip-content">${escHtml(displayText(tip.content))}</div>
           ${tip.tags.length ? `<div class="tip-tags">${tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("")}</div>` : ""}
         </div>${badge}`;
       // Every search result opens the Explore pane — signed-in or not. Reading is never
@@ -1410,7 +1491,7 @@
     row.dataset.id = tip.id;
     row.innerHTML = `<div class="apply-check">✓</div>
       <div class="apply-tip-main"><div class="apply-tip-content"></div><div class="apply-tip-tags"></div></div>`;
-    row.querySelector(".apply-tip-content").textContent = tip.content;
+    row.querySelector(".apply-tip-content").textContent = displayText(tip.content);
     row.querySelector(".apply-tip-tags").textContent = tip.tags.map(t => "#" + t).join(" ");
     row.onclick = () => toggleApplyTip(tip, row);
     return row;
@@ -2086,7 +2167,7 @@
 
   // ── Selected-tip card: full text + tag-expression builder ──
   function showCard(tip) {
-    $("net-card-content").textContent = tip.content;
+    $("net-card-content").textContent = displayText(tip.content);
     $("net-card-anecdote").textContent = tip.anecdote || "";
     renderTipImage("net-card-image", tip);    // the tip's illustration, if it has one
     renderCardVideo("net-card-video", tip);   // "▶ Watch the video" when one is attached
@@ -2425,7 +2506,8 @@
     if (window.matchMedia("(hover: none)").matches) return;
     if (NET.selected == null) n.el.classList.add("hover");
     const tip = n.tip;
-    const snippet = tip.content.length > 130 ? tip.content.slice(0, 127) + "…" : tip.content;
+    const words = displayText(tip.content);
+    const snippet = words.length > 130 ? words.slice(0, 127) + "…" : words;
     $("net-tooltip").innerHTML =
       `<div>${escHtml(snippet)}</div>
        <div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px">
@@ -2562,7 +2644,7 @@
     card.classList.remove("enter-next", "enter-back");
     void card.offsetWidth;                       // restart the animation
     card.classList.add(cardEnterDir === "back" ? "enter-back" : "enter-next");
-    $("cv-content").textContent = tip.content;
+    renderTipText("cv-content", tip);
     $("cv-anecdote").textContent = tip.anecdote || "";
     renderTipImage("cv-image", tip);    // the tip's illustration, if it has one
     renderCardVideo("cv-video", tip);   // "▶ Watch the video" when one is attached
@@ -2825,7 +2907,7 @@
           ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main">
-          <div class="tip-content">${escHtml(tip.content)}</div>
+          <div class="tip-content">${escHtml(displayText(tip.content))}</div>
           ${tip.tags.length ? `<div class="tip-tags">${tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("")}</div>` : ""}
         </div>`;
       card.dataset.id = tip.id;
@@ -2850,7 +2932,7 @@
 
   function openFavAnalysis(tip) {
     selectedFav = tip;
-    $("analysis-tip").textContent = tip.content;
+    renderTipText("analysis-tip", tip);
     $("analysis-anecdote").textContent = tip.anecdote || "";   // the story/context behind the tip
     renderTipImage("analysis-image", tip);   // after both blocks: a float lives inside one
     $("analysis-video").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";  // further info
@@ -3028,7 +3110,7 @@
           ${tipControlsHTML(tip)}
         </div>
         <div class="tip-main">
-          <div class="tip-content">${escHtml(tip.content)}</div>
+          <div class="tip-content">${escHtml(displayText(tip.content))}</div>
           ${tip.tags.length ? `<div class="tip-tags">${tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("")}</div>` : ""}
         </div>${pct}`;
       bindTipControls(card, tip);   // ▲ saves to favourites, like every other tip card
@@ -3433,7 +3515,7 @@
     const q = $("path-filter").value.trim().toLowerCase();
     $("path-picked").innerHTML = pathPick.map((id, i) => {
       const t = pathTipsCache.find(x => x.id === id);
-      return `<button class="path-chip" data-id="${id}" title="Remove">${i + 1}. ${escHtml((t ? t.content : "?").slice(0, 40))}</button>`;
+      return `<button class="path-chip" data-id="${id}" title="Remove">${i + 1}. ${escHtml(displayText(t ? t.content : "?").slice(0, 40))}</button>`;
     }).join("") || `<span class="journal-empty">No tips picked yet.</span>`;
     $("path-picked").querySelectorAll(".path-chip").forEach(b => b.onclick = () => {
       pathPick = pathPick.filter(id => id !== Number(b.dataset.id)); renderPathPicker();
@@ -3446,7 +3528,7 @@
       .forEach(t => {
         const d = document.createElement("div");
         d.className = "path-pick" + (pathPick.includes(t.id) ? " picked" : "");
-        d.textContent = t.content;
+        d.textContent = displayText(t.content);
         d.onclick = () => {
           if (!pathPick.includes(t.id)) { pathPick.push(t.id); renderPathPicker(); }
         };
@@ -3490,7 +3572,7 @@
     if (s.error) { $("stats-body").innerHTML = ERR(s.error); return; }
     const rows = (s.by_name || []).map(r => `<tr><td>${escHtml(r.name)}</td><td class="num">${r.n}</td></tr>`).join("");
     const tips = (s.top_tips || []).map(r =>
-      `<tr><td>${escHtml(r.content.slice(0, 60))}${r.content.length > 60 ? "…" : ""}</td><td class="num">${r.views}</td></tr>`).join("");
+      `<tr><td>${escHtml(displayText(r.content).slice(0, 60))}${displayText(r.content).length > 60 ? "…" : ""}</td><td class="num">${r.views}</td></tr>`).join("");
     $("stats-body").innerHTML =
       `<div class="analysis-label">Events (30 days)</div>
        <table class="stats-table">${rows || "<tr><td>No events yet.</td></tr>"}</table>

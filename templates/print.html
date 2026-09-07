@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Practical Wisdom — printable</title>
+<style>
+  /* Standalone page: light-only and self-contained, because it exists to be put on
+     paper. The app's dark themes would waste an entire cartridge. */
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0 24px 60px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    color: #23261f; background: #fff; line-height: 1.5;
+  }
+  .sheet { max-width: 46em; margin: 0 auto; }
+
+  /* Controls: on screen only. */
+  .bar {
+    position: sticky; top: 0; z-index: 2; background: #fff;
+    border-bottom: 1px solid #e6e4d9; padding: 14px 0; margin-bottom: 28px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .bar label { display: flex; align-items: center; gap: 7px; font-size: 0.86rem; cursor: pointer; }
+  .bar .count { font-size: 0.8rem; color: #636857; margin-left: auto; }
+  .bar button {
+    font: inherit; font-size: 0.86rem; font-weight: 600; cursor: pointer;
+    background: #e5b64a; color: #2a2008; border: none; padding: 8px 18px; border-radius: 7px;
+  }
+  .bar a { font-size: 0.86rem; color: #3d6a20; }
+
+  h1 { font-family: Georgia, "Times New Roman", serif; font-size: 1.7rem; margin: 0 0 4px; font-weight: 600; }
+  .lede { color: #5b6053; font-size: 0.9rem; margin: 0 0 30px; }
+  h2 {
+    font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: #636857;
+    margin: 34px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e6e4d9;
+    break-after: avoid; page-break-after: avoid;   /* never strand a heading at a page foot */
+  }
+  .tip {
+    margin: 0 0 20px; padding: 0 0 16px; border-bottom: 1px solid #efeee5;
+    break-inside: avoid; page-break-inside: avoid; /* a tip never splits across pages */
+  }
+  .tip:last-child { border-bottom: none; }
+  .words { font-size: 1.02rem; }
+  .anecdote {
+    margin-top: 8px; font-size: 0.88rem; color: #5b6053;
+    border-left: 2px solid #c4dcab; padding-left: 11px;
+  }
+  .tags { margin-top: 8px; font-size: 0.72rem; color: #8a8f7e; }
+
+  /* Pictures are off until asked for, and capped so one can't eat a page. */
+  .pic { display: block; height: auto; border-radius: 6px; margin: 10px 0; max-height: 8cm;
+         object-fit: contain; width: 100%; }
+  .pic-s { width: 30%; } .pic-m { width: 50%; } .pic-l { width: 100%; }
+  .pic-left  { float: left;  margin: 0 16px 8px 0; }
+  .pic-right { float: right; margin: 0 0 8px 16px; }
+  .words.has-inline { display: flow-root; }
+  body:not(.with-pictures) .pic { display: none; }
+
+  @media print {
+    @page { margin: 18mm 16mm; }
+    body { padding: 0; font-size: 10.5pt; }
+    .bar { display: none; }
+    a { color: inherit; text-decoration: none; }
+    h1 { font-size: 20pt; }
+  }
+</style>
+</head>
+<body{% if show_pictures %} class="with-pictures"{% endif %}>
+<div class="sheet">
+  <div class="bar">
+    <button type="button" onclick="window.print()">Print</button>
+    <label><input type="checkbox" id="pics"{% if show_pictures %} checked{% endif %}> Show pictures</label>
+    <a href="/">Back to the app</a>
+    <span class="count">{{ total }} tip{{ '' if total == 1 else 's' }}{% if filtered %} · filtered to {{ filtered|join(', ') }}{% endif %}</span>
+  </div>
+
+  <h1>Practical Wisdom</h1>
+  <p class="lede">{{ total }} tip{{ '' if total == 1 else 's' }}{% if filtered %}, filtered to {{ filtered|join(', ') }}{% endif %}.</p>
+
+  {% for tag, tips in groups %}
+    <h2>{{ tag }}</h2>
+    {% for t in tips %}
+      {% set pic %}{% if t.image_url %}<img class="pic pic-{{ t.align }} pic-{{ t.size }}" src="{{ t.image_url }}" alt="">{% endif %}{% endset %}
+      <div class="tip">
+        {% if t.pos == 'above' %}{{ pic }}{% endif %}
+        <div class="words{% if t.inline %} has-inline{% endif %}">
+          {%- if t.inline %}{{ t.content_before }} {{ pic }} {{ t.content_after }}
+          {%- else %}{{ t.content }}{% endif -%}
+        </div>
+        {% if t.pos == 'between' %}{{ pic }}{% endif %}
+        {% if t.anecdote %}<div class="anecdote">{{ t.anecdote }}</div>{% endif %}
+        {% if t.pos == 'below' %}{{ pic }}{% endif %}
+        {% if t.tags %}<div class="tags">{{ t.tags|join(' · ') }}</div>{% endif %}
+      </div>
+    {% endfor %}
+  {% endfor %}
+</div>
+<script>
+  // Toggling only flips a class, so switching pictures on and off costs no round trip.
+  document.getElementById("pics").addEventListener("change", e => {
+    document.body.classList.toggle("with-pictures", e.target.checked);
+  });
+</script>
+</body>
+</html>
