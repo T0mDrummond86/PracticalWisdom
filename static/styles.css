@@ -510,6 +510,9 @@ main { display: flex; flex: 1; gap: 0; min-height: 0; }
 #cv-card::after, #analysis-pane::after { content: ""; display: block; clear: both; }
 /* A floated picture is injected as the first child of the block it wraps, so that block
    must contain it — otherwise a picture taller than its text spills past the block. */
+/* An inline picture sits between two halves of the sentence, so its block has to
+   contain it — otherwise a picture taller than the words spills out of the card. */
+#cv-content.has-inline, #analysis-tip.has-inline { display: flow-root; }
 #cv-content:has(> .pic-left), #cv-content:has(> .pic-right),
 #cv-anecdote:has(> .pic-left), #cv-anecdote:has(> .pic-right),
 #analysis-tip:has(> .pic-left), #analysis-tip:has(> .pic-right),
