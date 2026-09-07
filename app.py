@@ -1886,17 +1886,40 @@ def share_tip(tip_id):
 
 @app.get("/print")
 def print_tips():
-    """A printable document of the library. Open, like the library itself.
+    """A printable document of the tips you saved.
 
-    ?tags=a,b narrows it to those tags (matching what the app is filtered to), and the
-    picture toggle lives on the page rather than in the URL so switching it costs no
-    round trip. Tips are grouped under their primary tag, which is the order a reader
-    of the printed page would expect.
+    ?tip=N prints exactly one, and needs no sign-in because that tip is already public on
+    its share page. Otherwise this prints the reader's favourites — printing the whole
+    library was never the point — narrowed by ?tags=a,b to match what the app is filtered
+    to. Tips are grouped under their primary tag, which is the order a reader of the
+    printed page would expect. The picture toggle lives on the page rather than in the
+    URL, so switching it costs no round trip.
     """
     wanted = [t.strip() for t in (request.args.get("tags") or "").split(",") if t.strip()]
+    one = request.args.get("tip")
+    uid = current_user_id()
+
     with get_db() as conn:
-        rows = conn.execute("SELECT id, content, anecdote, image_file, image_pos, "
-                            "image_align, image_size FROM tips ORDER BY id").fetchall()
+        if one:
+            # A single tip is already public on its share page, so printing one is too.
+            try:
+                row = conn.execute(
+                    "SELECT id, content, anecdote, image_file, image_pos, image_align, "
+                    "image_size FROM tips WHERE id = ?", (int(one),)).fetchone()
+            except ValueError:
+                row = None
+            if not row:
+                return "Tip not found.", 404
+            rows, keep, wanted = [row], None, []
+        else:
+            # Everything else prints what you saved, which needs a signed-in reader.
+            if not uid:
+                return render_template("print.html", groups=[], total=0, filtered=[],
+                                       show_pictures=False, needs_sign_in=True, single=None)
+            keep = {r["tip_id"] for r in conn.execute(
+                "SELECT tip_id FROM votes WHERE user_id = ? AND value = 1", (uid,))}
+            rows = conn.execute("SELECT id, content, anecdote, image_file, image_pos, "
+                                "image_align, image_size FROM tips ORDER BY id").fetchall()
         tags_by_tip = {}
         for r in conn.execute(
                 "SELECT tt.tip_id, t.name, t.tier FROM tip_tags tt JOIN tags t ON t.id = tt.tag_id"):
@@ -1904,6 +1927,8 @@ def print_tips():
 
     groups = {}
     for r in rows:
+        if keep is not None and r["id"] not in keep:
+            continue
         names = [n for n, _ in tags_by_tip.get(r["id"], [])]
         if wanted and not any(n in wanted for n in names):
             continue
@@ -1935,7 +1960,8 @@ def print_tips():
         })
     total = sum(len(v) for v in groups.values())
     return render_template("print.html", groups=sorted(groups.items()), total=total,
-                           filtered=wanted, show_pictures=request.args.get("pics") == "1")
+                           filtered=wanted, show_pictures=request.args.get("pics") == "1",
+                           needs_sign_in=False, single=(one if one else None))
 
 
 # ── Web push: daily-tip notifications ──

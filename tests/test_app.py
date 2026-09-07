@@ -835,8 +835,9 @@ def test_a_marker_in_both_fields_resolves_to_the_tip(client, app_module, monkeyp
 def test_print_page_splits_an_anecdote_marker(client, app_module, monkeypatch, tmp_path):
     monkeypatch.setattr(app_module, "TIP_IMAGE_WRITE_DIR", str(tmp_path))
     m = app_module.PICTURE_MARKER
-    anecdote_tip(app_module, "A plain tip", "Story before " + m + " story after", tmp_path)
-    html = client.get("/print").get_data(as_text=True)
+    tid = anecdote_tip(app_module, "A plain tip", "Story before " + m + " story after",
+                       tmp_path)
+    html = client.get("/print?tip=%d" % tid).get_data(as_text=True)
     assert m not in html
     body = html[html.index("Story before"):]
     assert body.index("<img") < body.index("story after")
@@ -844,24 +845,59 @@ def test_print_page_splits_an_anecdote_marker(client, app_module, monkeypatch, t
 
 # ── The printable page ──
 
-def test_print_page_lists_every_tip(client, app_module):
+def test_print_page_shows_only_the_readers_favourites(client, app_module):
+    """Printing the whole library was never the point — you print what you saved."""
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    kept = add_tip(app_module, "Measure what matters", ["moral"])
+    add_tip(app_module, "Done beats perfect", ["physical"])
+    client.post(f"/api/tips/{kept}/vote", json={"value": 1}, headers={"X-CSRF-Token": token})
+    html = client.get("/print").get_data(as_text=True)
+    assert "Measure what matters" in html and "Done beats perfect" not in html
+
+
+def test_print_page_honours_a_tag_filter_within_favourites(client, app_module):
+    uid = make_user(app_module)
+    token = login_user(client, uid)
     a = add_tip(app_module, "Measure what matters", ["moral"])
     b = add_tip(app_module, "Done beats perfect", ["physical"])
-    html = client.get("/print").get_data(as_text=True)
-    assert "Measure what matters" in html and "Done beats perfect" in html
-
-
-def test_print_page_honours_a_tag_filter(client, app_module):
-    add_tip(app_module, "Measure what matters", ["moral"])
-    add_tip(app_module, "Done beats perfect", ["physical"])
+    for t in (a, b):
+        client.post(f"/api/tips/{t}/vote", json={"value": 1}, headers={"X-CSRF-Token": token})
     html = client.get("/print?tags=moral").get_data(as_text=True)
     assert "Measure what matters" in html and "Done beats perfect" not in html
 
 
+def test_print_page_asks_a_signed_out_visitor_to_sign_in(client, app_module):
+    add_tip(app_module, "Measure what matters", ["moral"])
+    r = client.get("/print")
+    html = r.get_data(as_text=True)
+    assert r.status_code == 200
+    assert "Measure what matters" not in html, "a stranger's print must not be the library"
+    assert "sign in" in html.lower()
+
+
+def test_print_page_can_print_one_tip(client, app_module):
+    keep = add_tip(app_module, "Measure what matters", ["moral"])
+    add_tip(app_module, "Done beats perfect", ["physical"])
+    html = client.get("/print?tip=%d" % keep).get_data(as_text=True)
+    assert "Measure what matters" in html and "Done beats perfect" not in html
+
+
+def test_printing_one_tip_needs_no_sign_in(client, app_module):
+    """A single tip is already public on its share page, so printing one is too."""
+    tid = add_tip(app_module, "Measure what matters", ["moral"])
+    html = client.get("/print?tip=%d" % tid).get_data(as_text=True)
+    assert "Measure what matters" in html and "sign in" not in html.lower()
+
+
+def test_printing_a_missing_tip_is_a_404(client, app_module):
+    assert client.get("/print?tip=999999").status_code == 404
+
+
 def test_print_page_strips_the_marker(client, app_module):
     marker = app_module.PICTURE_MARKER
-    add_tip(app_module, "Measure " + marker + " what matters", ["moral"])
-    assert marker not in client.get("/print").get_data(as_text=True)
+    tid = add_tip(app_module, "Measure " + marker + " what matters", ["moral"])
+    assert marker not in client.get("/print?tip=%d" % tid).get_data(as_text=True)
 
 
 # ── Per-tip picture layout: where the picture sits and how wide it is ──

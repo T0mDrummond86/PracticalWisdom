@@ -28,6 +28,10 @@
     background: #e5b64a; color: #2a2008; border: none; padding: 8px 18px; border-radius: 7px;
   }
   .bar a { font-size: 0.86rem; color: #3d6a20; }
+  a.signin {
+    display: inline-block; font-size: 0.9rem; font-weight: 600; text-decoration: none;
+    background: #e5b64a; color: #2a2008; padding: 9px 20px; border-radius: 7px;
+  }
 
   h1 { font-family: Georgia, "Times New Roman", serif; font-size: 1.7rem; margin: 0 0 4px; font-weight: 600; }
   .lede { color: #5b6053; font-size: 0.9rem; margin: 0 0 30px; }
@@ -68,6 +72,13 @@
 </head>
 <body{% if show_pictures %} class="with-pictures"{% endif %}>
 <div class="sheet">
+  {% if needs_sign_in %}
+    <div class="bar"><a href="/">Back to the app</a></div>
+    <h1>Practical Wisdom</h1>
+    <p class="lede">Printing works from the tips you have saved, so it needs you to be
+      signed in. Sign in, save the tips you want to keep, then come back here.</p>
+    <p><a class="signin" href="/login">Sign in with Google</a></p>
+  {% else %}
   <div class="bar">
     <button type="button" onclick="window.print()">Print</button>
     <label><input type="checkbox" id="pics"{% if show_pictures %} checked{% endif %}> Show pictures</label>
@@ -76,7 +87,10 @@
   </div>
 
   <h1>Practical Wisdom</h1>
-  <p class="lede">{{ total }} tip{{ '' if total == 1 else 's' }}{% if filtered %}, filtered to {{ filtered|join(', ') }}{% endif %}.</p>
+  <p class="lede">
+    {%- if single %}One tip.
+    {%- else %}{{ total }} saved tip{{ '' if total == 1 else 's' }}{% if filtered %}, filtered to {{ filtered|join(', ') }}{% endif %}.{% endif -%}
+  </p>
 
   {% for tag, tips in groups %}
     <h2>{{ tag }}</h2>
@@ -100,10 +114,15 @@
       </div>
     {% endfor %}
   {% endfor %}
+  {% if total == 0 %}
+    <p class="lede">Nothing saved yet — save a few tips in the app and they will appear here.</p>
+  {% endif %}
+  {% endif %}
 </div>
 <script>
   // Toggling only flips a class, so switching pictures on and off costs no round trip.
-  document.getElementById("pics").addEventListener("change", e => {
+  const picsToggle = document.getElementById("pics");
+  if (picsToggle) picsToggle.addEventListener("change", e => {
     document.body.classList.toggle("with-pictures", e.target.checked);
   });
 </script>
