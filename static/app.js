@@ -627,14 +627,27 @@
     "analysis-image": { above: "analysis-tip", between: "analysis-anecdote" },
   };
 
+  // Which text carries the picture: "content", "anecdote", or null. The marker's location
+  // is the source of truth, so inline is wherever you put it rather than a separate
+  // setting that could disagree. One picture, one place: if a marker ends up in both, the
+  // tip's own words win. Mirrors inline_field() in app.py.
+  function inlineField(tip) {
+    if (!tip || tip.image_pos !== "inline" || !tip.image_url) return null;
+    if ((tip.content || "").indexOf(PICTURE_MARKER) !== -1) return "content";
+    if ((tip.anecdote || "").indexOf(PICTURE_MARKER) !== -1) return "anecdote";
+    return null;
+  }
+
   // Put a tip's words into a text element, splitting them around an inline picture.
   // Every other position leaves the text alone and renderTipImage places the picture.
-  function renderTipText(elId, tip) {
+  function renderTipText(elId, tip, which) {
     const el = $(elId);
     if (!el) return;
-    const [before, after] = splitAtMarker(tip.content);
-    if (!(tip.image_pos === "inline" && after !== null && tip.image_url)) {
-      el.textContent = displayText(tip.content);
+    which = which || "content";
+    const text = which === "anecdote" ? (tip.anecdote || "") : (tip.content || "");
+    const [before, after] = splitAtMarker(text);
+    if (inlineField(tip) !== which || after === null) {
+      el.textContent = displayText(text);
       el.classList.remove("has-inline");
       return;
     }
@@ -649,18 +662,26 @@
     const hosts = IMAGE_HOSTS[containerId];
     const pos = (tip && IMAGE_SLOTS[tip.image_pos] !== undefined) ? tip.image_pos : "above";
     const align = tip ? effectiveAlign(tip) : "full";
+    // "inline" is not a slot, so it is not a key in IMAGE_SLOTS and `pos` above resolves
+    // it to "above". The guard has to read the tip, or this places a second copy of the
+    // picture in the tip text while renderTipText is putting the real one in the anecdote.
+    const isInline = !!(tip && tip.image_pos === "inline");
 
-    // Clear every slot and any picture previously injected into the text.
+    // Clear this function's own slots. Always safe: nothing else writes to them.
     Object.values(IMAGE_SLOTS).forEach(sfx => {
       const box = $(containerId + sfx);
       if (box) box.innerHTML = "";
     });
+    // When the picture is inline, renderTipText owns BOTH text blocks and has already
+    // put the picture in one of them. Returning before the host sweep below matters:
+    // that sweep would otherwise delete the image that was just injected. renderTipText
+    // rewrites each block it touches, so nothing stale is left behind either way.
+    if (isInline) return;
     if (hosts) Object.values(hosts).forEach(id => {
       const el = $(id);
       if (el) el.querySelectorAll(":scope > img.tip-image").forEach(n => n.remove());
     });
     if (!(tip && tip.image_url)) return;
-    if (pos === "inline") return;      // renderTipText owns this one
 
     const img = `<img class="tip-image pic-${escHtml(align)} pic-${escHtml(tip.image_size || "m")}"`
       + ` src="${escHtml(tip.image_url)}" alt="">`;
@@ -794,10 +815,17 @@
                       image_align: tip.image_align || "full",
                       image_size: tip.image_size || "m" };
     // "Inline" is not something you pick from a list — it is wherever you put the marker.
-    const placed = ($("detail-content").value || "").indexOf(PICTURE_MARKER) !== -1;
+    const inContent = ($("detail-content").value || "").indexOf(PICTURE_MARKER) !== -1;
+    const inAnecdote = ($("detail-anecdote").value || "").indexOf(PICTURE_MARKER) !== -1;
+    const placed = inContent || inAnecdote;
     $("place-picture-btn").disabled = !tip.image_url;
     $("place-picture-btn").textContent = placed ? "Move here" : "Place here";
+    $("place-picture-btn").title = tip.image_url
+      ? "Put the cursor in the tip or the anecdote, then press this"
+      : "Add a picture first";
     $("unplace-picture-btn").hidden = !placed;
+    $("unplace-picture-btn").textContent = inAnecdote ? "Remove from anecdote"
+                                                      : "Remove from text";
     box.querySelectorAll(".seg-btn").forEach(b => {
       if (b.dataset.value === "inline") { b.disabled = true; }
       b.classList.toggle("active", current[b.dataset.layout] === b.dataset.value);
@@ -818,9 +846,20 @@
 
   // Insert the marker at the caret in the tip textarea. The text is a normal edit, so it
   // is saved by the tip's own Save; only the position flag saves immediately.
+  // The last of the two text fields you touched. Placement follows the cursor, so the
+  // button reads as "put it where I am" rather than always meaning the tip text.
+  let lastTextField = "detail-content";
+  ["detail-content", "detail-anecdote"].forEach(id => {
+    const el = $(id);
+    if (el) el.addEventListener("focus", () => { lastTextField = id; });
+  });
+
   function placePictureAtCursor() {
-    const ta = $("detail-content");
+    const ta = $(lastTextField);
     if (!selectedTip || !selectedTip.image_url) return;
+    // One picture, one place: clear the marker out of the other field first.
+    const other = $(lastTextField === "detail-content" ? "detail-anecdote" : "detail-content");
+    if (other) other.value = displayText(other.value);
     const value = ta.value.replace(PICTURE_MARKER, "").replace(/\s+/g, " ");
     const at = Math.min(ta.selectionStart ?? value.length, value.length);
     const before = value.slice(0, at).replace(/\s+$/, "");
@@ -828,17 +867,25 @@
     ta.value = `${before} ${PICTURE_MARKER} ${after}`.trim();
     ta.focus();
     ta.selectionStart = ta.selectionEnd = (before + " " + PICTURE_MARKER).length + 1;
-    selectedTip.content = ta.value;
+    const inAnecdote = lastTextField === "detail-anecdote";
+    selectedTip.content = $("detail-content").value;
+    selectedTip.anecdote = $("detail-anecdote").value;
     setImageLayout("image_pos", "inline");
     const status = $("image-editor-status");
     status.style.color = "var(--text-tertiary)";
-    status.textContent = "Picture placed in the text — Save the tip to keep it there.";
+    status.textContent = `Picture placed in the ${inAnecdote ? "anecdote" : "tip"} — `
+      + "Save the tip to keep it there.";
   }
 
   function removePictureFromText() {
-    const ta = $("detail-content");
-    ta.value = displayText(ta.value);
-    if (selectedTip) selectedTip.content = ta.value;
+    ["detail-content", "detail-anecdote"].forEach(id => {
+      const el = $(id);
+      if (el) el.value = displayText(el.value);
+    });
+    if (selectedTip) {
+      selectedTip.content = $("detail-content").value;
+      selectedTip.anecdote = $("detail-anecdote").value;
+    }
     setImageLayout("image_pos", "above");
   }
 
@@ -2168,7 +2215,7 @@
   // ── Selected-tip card: full text + tag-expression builder ──
   function showCard(tip) {
     $("net-card-content").textContent = displayText(tip.content);
-    $("net-card-anecdote").textContent = tip.anecdote || "";
+    $("net-card-anecdote").textContent = displayText(tip.anecdote);
     renderTipImage("net-card-image", tip);    // the tip's illustration, if it has one
     renderCardVideo("net-card-video", tip);   // "▶ Watch the video" when one is attached
     // A fresh selection starts with the tag-refinement tools tucked away again.
@@ -2645,7 +2692,7 @@
     void card.offsetWidth;                       // restart the animation
     card.classList.add(cardEnterDir === "back" ? "enter-back" : "enter-next");
     renderTipText("cv-content", tip);
-    $("cv-anecdote").textContent = tip.anecdote || "";
+    renderTipText("cv-anecdote", tip, "anecdote");
     renderTipImage("cv-image", tip);    // the tip's illustration, if it has one
     renderCardVideo("cv-video", tip);   // "▶ Watch the video" when one is attached
     $("cv-tags").innerHTML = tip.tags.map(t => `<span class="chip">${escHtml(t)}</span>`).join("");
@@ -2933,7 +2980,7 @@
   function openFavAnalysis(tip) {
     selectedFav = tip;
     renderTipText("analysis-tip", tip);
-    $("analysis-anecdote").textContent = tip.anecdote || "";   // the story/context behind the tip
+    renderTipText("analysis-anecdote", tip, "anecdote");   // the story/context behind the tip
     renderTipImage("analysis-image", tip);   // after both blocks: a float lives inside one
     $("analysis-video").innerHTML = tip.video_embed ? videoEmbedHtml(tip.video_embed) : "";  // further info
     const overrides = tip.analysis || {};
