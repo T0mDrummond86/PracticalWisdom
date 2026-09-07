@@ -114,10 +114,15 @@
   }
   const flipSuggestMode = () => setSuggestMode(suggestMode === "meaning" ? "tags" : "meaning");
 
-  // The printable document, carrying the current tag filter so it prints what you see.
+  // The printable document of the tips you saved, narrowed by whatever tags are filtered.
   function openPrintView() {
     const q = activeTags.length ? "?tags=" + encodeURIComponent(activeTags.join(",")) : "";
     window.open("/print" + q, "_blank", "noopener");
+  }
+
+  // ...and a single tip, from the pane you are reading it in.
+  function openPrintOneTip(tipId) {
+    window.open("/print?tip=" + encodeURIComponent(tipId), "_blank", "noopener");
   }
 
   function renderAuth() {
@@ -142,7 +147,7 @@
             `<div class="account-menu-header">${sub}</div>` +
             `<button class="account-item" id="suggest-tip-btn" role="menuitem" title="Suggest a tip for review">✍ Suggest a tip</button>` +
             `<button class="account-item" id="help-btn" role="menuitem">❔ Help &amp; how-to</button>` +
-            `<button class="account-item" id="print-btn" role="menuitem">Print tips…</button>` +
+            `<button class="account-item" id="print-btn" role="menuitem">Print my saved tips…</button>` +
             // Admin access lives here — you must be signed in first to reach it.
             (isAdmin
               ? `<button class="account-item account-item-admin" id="admin-logout-btn" role="menuitem"><span class="admin-badge">ADMIN</span> Exit admin mode</button>`
@@ -3698,6 +3703,9 @@
     try { await navigator.clipboard.writeText(url); toast("Link copied — anyone can open it."); }
     catch (e) { prompt("Copy this link:", url); }
     track("share_tip", selectedFav.id);
+  };
+  $("print-tip-btn").onclick = () => {
+    if (selectedFav) openPrintOneTip(selectedFav.id);
   };
   $("practice-tip-btn").onclick = async () => {
     if (!selectedFav) return;
