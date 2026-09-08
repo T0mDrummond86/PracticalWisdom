@@ -72,7 +72,19 @@ Every test gets a fresh temp SQLite DB (`tests/conftest.py`) — your real
 before considering it done; each session so far has kept it green (87 passing
 on `pwa` as of the last check). New features should add tests in the same
 style as `tests/test_app.py` (helpers: `add_tip`, `login_admin`, `login_user`,
-`get_csrf`).
+`get_csrf`) — and check for an existing helper before writing one, since a
+duplicate definition shadows the original and breaks unrelated tests.
+
+The front end has no test runner. Where a piece of `static/app.js` is pure and
+worth pinning, add a dependency-free node script beside the others and run it
+directly:
+
+```bash
+node tests/test_marker_placement.mjs
+```
+
+It lifts the named function out of `static/app.js` and exercises the real
+shipped code rather than a copy, so it needs no build step and no exports.
 
 ## Deploying (pwa branch → Railway)
 
