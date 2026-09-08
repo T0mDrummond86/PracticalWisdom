@@ -1217,7 +1217,10 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
   color: var(--text-tertiary); margin-bottom: 2px;
   display: flex; align-items: center; gap: 10px;
 }
-.fav-list-head .btn { margin-left: auto; text-transform: none; letter-spacing: 0; }
+/* Only the first button takes the free space; the rest sit beside it. With auto on
+   every one they spread across the row instead of grouping at the end. */
+.fav-list-head .btn { text-transform: none; letter-spacing: 0; }
+.fav-list-head .btn:first-of-type { margin-left: auto; }
 
 /* ── Ask-for-advice view ── */
 #advise-view {
