@@ -859,19 +859,38 @@
     if (el) el.addEventListener("focus", () => { lastTextField = id; });
   });
 
+  // Put the marker at the caret. Pure, and covered by tests/test_marker_placement.mjs.
+  //
+  // The caret has to be split on FIRST and each half tidied separately. The obvious
+  // shape — clean the whole string, then slice it at selectionStart — is wrong, because
+  // selectionStart indexes the text as typed while the cleaned string has had the old
+  // marker (5 characters) and any collapsed whitespace taken out of it. Every character
+  // removed before the caret pushed the insertion point further right, which is why
+  // "Move here" landed mid-word.
+  function markerPlacement(raw, caret, marker) {
+    const text = raw || "";
+    let at = Math.max(0, Math.min(caret == null ? text.length : caret, text.length));
+    // A caret sitting inside the old marker would split it into fragments, so snap to
+    // the start of it.
+    const old = text.indexOf(marker);
+    if (old !== -1 && at > old && at < old + marker.length) at = old;
+    const tidy = t => t.split(marker).join(" ").replace(/\s+/g, " ").trim();
+    const before = tidy(text.slice(0, at));
+    const after = tidy(text.slice(at));
+    const value = [before, marker, after].filter(Boolean).join(" ");
+    return { value: value, caretAfter: (before ? before.length + 1 : 0) + marker.length };
+  }
+
   function placePictureAtCursor() {
     const ta = $(lastTextField);
     if (!selectedTip || !selectedTip.image_url) return;
     // One picture, one place: clear the marker out of the other field first.
     const other = $(lastTextField === "detail-content" ? "detail-anecdote" : "detail-content");
     if (other) other.value = displayText(other.value);
-    const value = ta.value.replace(PICTURE_MARKER, "").replace(/\s+/g, " ");
-    const at = Math.min(ta.selectionStart ?? value.length, value.length);
-    const before = value.slice(0, at).replace(/\s+$/, "");
-    const after = value.slice(at).replace(/^\s+/, "");
-    ta.value = `${before} ${PICTURE_MARKER} ${after}`.trim();
+    const placed = markerPlacement(ta.value, ta.selectionStart, PICTURE_MARKER);
+    ta.value = placed.value;
     ta.focus();
-    ta.selectionStart = ta.selectionEnd = (before + " " + PICTURE_MARKER).length + 1;
+    ta.selectionStart = ta.selectionEnd = placed.caretAfter;
     const inAnecdote = lastTextField === "detail-anecdote";
     selectedTip.content = $("detail-content").value;
     selectedTip.anecdote = $("detail-anecdote").value;
