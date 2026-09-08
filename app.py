@@ -145,7 +145,21 @@ def over_burst(name, per_min):
 
 
 def is_admin():
-    return bool(session.get("is_admin"))
+    """Administrator either by signed-in Google account, or by the password fallback.
+
+    The account is the normal route — the people who had already signed in when
+    migration 015 ran were granted it, and an admin can promote or revoke anyone since.
+    The password stays as a way back in if the account list is ever wrong, so a bad
+    grant can never lock the owner out of their own site.
+    """
+    if session.get("is_admin"):
+        return True
+    uid = session.get("uid")
+    if not uid:
+        return False
+    with get_db() as conn:
+        row = conn.execute("SELECT is_admin FROM users WHERE id = ?", (uid,)).fetchone()
+    return bool(row and row["is_admin"])
 
 
 def admin_required(fn):
@@ -1483,6 +1497,45 @@ def admin_login():
         conn.commit()
     session["is_admin"] = True
     return jsonify({"is_admin": True})
+
+
+@app.get("/api/admins")
+@admin_required
+def list_admins():
+    """Everyone with an account, and whether they administer the site.
+
+    Worth having in front of you: the one-time grant promoted whoever had signed in by
+    then, and this is how you find out who that actually was.
+    """
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT id, email, name, is_admin, created_at FROM users ORDER BY is_admin DESC, id"
+        ).fetchall()
+    return jsonify({"users": [{"id": r["id"], "email": r["email"], "name": r["name"],
+                               "is_admin": bool(r["is_admin"]), "since": r["created_at"]}
+                              for r in rows]})
+
+
+@app.post("/api/admins/<int:user_id>")
+@admin_required
+def set_admin(user_id):
+    """Promote or demote an account."""
+    make = bool((request.get_json(force=True) or {}).get("is_admin"))
+    with get_db() as conn:
+        if not conn.execute("SELECT 1 FROM users WHERE id = ?", (user_id,)).fetchone():
+            return jsonify({"error": "user not found"}), 404
+        if not make:
+            others = conn.execute(
+                "SELECT COUNT(*) AS n FROM users WHERE is_admin = 1 AND id != ?",
+                (user_id,)).fetchone()["n"]
+            if not others:
+                # Otherwise the site has no administrator and only the password gets you
+                # back — which is the thing this replaced.
+                return jsonify({"error": "That is the only administrator left. "
+                                         "Make someone else an admin first."}), 400
+        conn.execute("UPDATE users SET is_admin = ? WHERE id = ?", (1 if make else 0, user_id))
+        conn.commit()
+    return jsonify({"ok": True, "is_admin": make})
 
 
 @app.post("/api/admin/logout")

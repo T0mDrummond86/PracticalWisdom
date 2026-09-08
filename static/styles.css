@@ -1558,3 +1558,15 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
   /* Modals fill the small screen and scroll if tall. */
   .modal { width: 100%; max-width: 94vw; max-height: 88vh; overflow-y: auto; padding: 18px; }
 }
+
+/* ── Who can administer ── */
+#admins-list { display: flex; flex-direction: column; gap: 2px; margin: var(--s-3) 0; max-height: 50vh; overflow-y: auto; }
+.admin-row {
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: 9px 4px; border-bottom: 1px solid var(--border-subtle);
+}
+.admin-row:last-child { border-bottom: none; }
+.admin-who { min-width: 0; }
+.admin-name { font-size: var(--fs-sm); color: var(--text); }
+.admin-email { font-size: var(--fs-2xs); color: var(--text-tertiary); }
+.admin-toggle { margin-left: auto; flex: 0 0 auto; }
