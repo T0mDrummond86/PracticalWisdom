@@ -2961,8 +2961,12 @@
     const canReflect = embeddingsEnabled && tips.length >= 3;
     list.innerHTML =
       `<div class="fav-list-head">★ Your favorites${tips.length ? " (" + tips.length + ")" : ""}` +
+      // Printing belongs next to the tips being printed. It lived only in the account
+      // menu, which is not where anyone looking at their favourites goes to find it.
+      (tips.length ? `<button class="btn secondary" id="fav-print-btn" title="Print these tips">Print</button>` : "") +
       (canReflect ? `<button class="btn secondary" id="fav-reflect-btn" title="Use AI to reflect on what your saved tips say about you">Reflect on these</button>` : "") +
       `</div>`;
+    if (tips.length) $("fav-print-btn").onclick = openPrintView;
     if (canReflect) $("fav-reflect-btn").onclick = openFavInsights;
     renderFavBanners(list);   // practice-this-week + revisit + weekly review, above the cards
     if (!tips.length) {
