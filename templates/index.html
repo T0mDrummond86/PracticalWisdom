@@ -78,6 +78,7 @@
           <button class="btn secondary" id="apply-tag-btn">Apply a tag to tips</button>
           <button class="btn secondary" id="manage-tags-btn">Delete tags</button>
           <button class="btn secondary" id="review-subs-btn">Review submissions</button>
+          <button class="btn secondary" id="admins-btn">Who can administer…</button>
           <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">Rebuild semantic index</button>
           <button class="btn secondary" id="manage-paths-btn">Curated paths</button>
           <button class="btn secondary" id="usage-stats-btn">Usage stats</button>
@@ -175,6 +176,19 @@
         <textarea id="advise-input" placeholder="e.g. I keep procrastinating on a big project and feel overwhelmed…"></textarea>
         <button class="btn" id="advise-btn">Get advice</button>
         <div id="advise-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="admins-overlay" class="overlay hidden">
+    <div class="modal">
+      <h2>Who can administer</h2>
+      <p class="modal-note">Everyone who had signed in when admin accounts replaced the
+        password became an administrator. Anyone who signs in from now on is an ordinary
+        reader until you promote them here.</p>
+      <div id="admins-list"></div>
+      <div class="modal-actions">
+        <button class="btn secondary" id="admins-close">Close</button>
       </div>
     </div>
   </div>

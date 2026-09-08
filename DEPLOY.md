@@ -20,7 +20,7 @@ The app runs as-is on Railway; these are the account/credential steps only you c
 | `GOOGLE_CLIENT_ID` | from step 1 |
 | `GOOGLE_CLIENT_SECRET` | from step 1 |
 | `SECRET_KEY` | a long random string (e.g. `python -c "import secrets;print(secrets.token_hex(32))"`) |
-| `ADMIN_PASSWORD` | your admin password (do **not** keep the default `admin`) |
+| `ADMIN_PASSWORD` | fallback admin password — see "Who administers the site" below |
 | `DB_PATH` | `/data/tips.db` (must match the volume mount) |
 | `COOKIE_SECURE` | `1` |
 | `GROQ_API_KEY` | *(optional)* enables AI advice/tag suggestions |
@@ -32,6 +32,24 @@ The app runs as-is on Railway; these are the account/credential steps only you c
 | `IMAGE_DAILY_LIMIT` | *(optional)* picture generations per day; default 5 |
 | `EMBEDDINGS_API_URL` | your provider's `/v1/embeddings` endpoint |
 | `EMBEDDINGS_API_MODEL` | your provider's embedding model name |
+
+### Who administers the site
+
+Administrators are Google accounts, not a shared password. Migration `015_admin_users.sql`
+performs a **one-time grant**: every account that had already signed in when it ran became
+an administrator. It is recorded in `schema_migrations`, so it runs once — anyone signing
+in afterwards is an ordinary reader until an existing admin promotes them.
+
+**Check who that promoted before you rely on it.** Open *Tips & Tags Management → Who can
+administer* after deploying: it lists every account and lets you promote or revoke. If
+people you did not expect had signed in to save favourites, they are administrators until
+you remove them, and admin can delete every tip. The last remaining administrator cannot
+remove themselves, so the site can never be left with none.
+
+`ADMIN_PASSWORD` still works and is deliberately kept: it is the way back in if the
+account list is ever wrong. Note that `ADMIN_PASSWORD_HASH`, if set, silently overrides
+`ADMIN_PASSWORD` — if the password has ever seemed not to take effect, check for a
+leftover hash variable.
 
 ### Spend limits on the public AI routes
 

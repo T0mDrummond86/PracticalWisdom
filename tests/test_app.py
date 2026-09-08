@@ -900,6 +900,110 @@ def test_print_page_strips_the_marker(client, app_module):
     assert marker not in client.get("/print?tip=%d" % tid).get_data(as_text=True)
 
 
+# ── Administrators are Google accounts, not a password ──
+# The people who had already signed in when this shipped were granted admin; everyone
+# who signs in afterwards is an ordinary reader until an admin says otherwise.
+
+def test_migration_grants_admin_to_accounts_that_already_existed(app_module, tmp_path):
+    """The one-time grant is the whole point of the change, so it is tested against a
+    database that has users in it before the migration runs — which is the situation on
+    the deployed site, and the opposite of a fresh test database."""
+    import sqlite3, os
+    db = str(tmp_path / "pre.db")
+    conn = sqlite3.connect(db)
+    conn.row_factory = sqlite3.Row
+    conn.execute("CREATE TABLE schema_migrations (filename TEXT PRIMARY KEY, "
+                 "applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    files = sorted(f for f in os.listdir(app_module.MIGRATIONS_DIR) if f.endswith(".sql"))
+    grant = [f for f in files if f.startswith("015")]
+    assert grant, "no 015 migration found"
+    for fname in files:
+        if fname == grant[0]:
+            # everyone who exists at this moment is an administrator afterwards
+            conn.execute("INSERT INTO users (google_sub, email, name) VALUES ('a','a@x','A')")
+            conn.execute("INSERT INTO users (google_sub, email, name) VALUES ('b','b@x','B')")
+            conn.commit()
+        with open(os.path.join(app_module.MIGRATIONS_DIR, fname)) as fh:
+            conn.executescript(fh.read())
+        conn.execute("INSERT INTO schema_migrations (filename) VALUES (?)", (fname,))
+    conn.commit()
+    assert [r["is_admin"] for r in conn.execute("SELECT is_admin FROM users ORDER BY id")] == [1, 1]
+    # ...and somebody who signs in later is not
+    conn.execute("INSERT INTO users (google_sub, email, name) VALUES ('c','c@x','C')")
+    conn.commit()
+    assert conn.execute("SELECT is_admin FROM users WHERE google_sub='c'").fetchone()["is_admin"] == 0
+
+
+def promote(app_module, uid, value=1):
+    with app_module.get_db() as conn:
+        conn.execute("UPDATE users SET is_admin = ? WHERE id = ?", (value, uid))
+        conn.commit()
+
+
+def test_an_admin_google_account_needs_no_password(client, app_module):
+    uid = make_user(app_module)
+    promote(app_module, uid)
+    token = login_user(client, uid)
+    assert client.get("/api/me").get_json()["is_admin"] is True
+    tid = add_tip(app_module, "A tip")
+    assert client.delete(f"/api/tips/{tid}", headers={"X-CSRF-Token": token}).status_code == 200
+
+
+def test_an_ordinary_google_account_is_still_blocked(client, app_module):
+    uid = make_user(app_module)
+    token = login_user(client, uid)
+    assert client.get("/api/me").get_json()["is_admin"] is False
+    tid = add_tip(app_module, "A tip")
+    assert client.delete(f"/api/tips/{tid}", headers={"X-CSRF-Token": token}).status_code == 403
+
+
+def test_the_password_still_works_as_a_way_back_in(client, app_module):
+    """Never lock the owner out: if the admin accounts are wrong, the password remains."""
+    token = login_admin(client)
+    assert client.get("/api/me").get_json()["is_admin"] is True
+
+
+def test_admins_can_see_who_else_is_an_admin(client, app_module):
+    a = make_user(app_module, sub="a", email="a@x")
+    b = make_user(app_module, sub="b", email="b@x")
+    promote(app_module, a)
+    login_user(client, a)
+    rows = client.get("/api/admins").get_json()["users"]
+    by_email = {r["email"]: r["is_admin"] for r in rows}
+    assert by_email["a@x"] is True and by_email["b@x"] is False
+
+
+def test_listing_admins_is_itself_admin_only(client, app_module):
+    uid = make_user(app_module)
+    login_user(client, uid)
+    assert client.get("/api/admins").status_code == 403
+
+
+def test_an_admin_can_revoke_another(client, app_module):
+    a = make_user(app_module, sub="a", email="a@x")
+    b = make_user(app_module, sub="b", email="b@x")
+    promote(app_module, a); promote(app_module, b)
+    token = login_user(client, a)
+    r = client.post(f"/api/admins/{b}", json={"is_admin": False},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 200
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT is_admin FROM users WHERE id=?", (b,)).fetchone()["is_admin"] == 0
+
+
+def test_the_last_admin_cannot_remove_themselves(client, app_module):
+    """Revoking the only administrator would leave the site with no way back in except
+    the password, which is exactly what this change exists to stop relying on."""
+    a = make_user(app_module, sub="a", email="a@x")
+    promote(app_module, a)
+    token = login_user(client, a)
+    r = client.post(f"/api/admins/{a}", json={"is_admin": False},
+                    headers={"X-CSRF-Token": token})
+    assert r.status_code == 400
+    with app_module.get_db() as conn:
+        assert conn.execute("SELECT is_admin FROM users WHERE id=?", (a,)).fetchone()["is_admin"] == 1
+
+
 # ── Per-tip picture layout: where the picture sits and how wide it is ──
 
 def layout(client, tid, token, **kw):

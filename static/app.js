@@ -1297,6 +1297,45 @@
   }
   dismissOnBackdrop("modal-overlay");
 
+  // ── Who can administer ──
+  // The one-time grant promoted whoever had already signed in, so the first thing an
+  // owner needs is to see who that was and be able to take it back.
+  async function openAdmins() {
+    $("mgmt-menu").classList.add("hidden");
+    $("admins-overlay").classList.remove("hidden");
+    await renderAdmins();
+  }
+
+  async function renderAdmins() {
+    const box = $("admins-list");
+    box.innerHTML = SPINNER;
+    const r = await api("GET", "/api/admins");
+    if (r.error) { box.innerHTML = ERR(r.error); return; }
+    box.innerHTML = r.users.map(u => `
+      <div class="admin-row" data-id="${u.id}">
+        <div class="admin-who">
+          <div class="admin-name">${escHtml(u.name || u.email || "Account")}</div>
+          <div class="admin-email">${escHtml(u.email || "")}</div>
+        </div>
+        <button class="btn secondary admin-toggle" data-id="${u.id}" data-make="${u.is_admin ? "0" : "1"}">
+          ${u.is_admin ? "Remove admin" : "Make admin"}
+        </button>
+      </div>`).join("");
+    box.querySelectorAll(".admin-toggle").forEach(btn => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        const res = await api("POST", "/api/admins/" + btn.dataset.id,
+                              { is_admin: btn.dataset.make === "1" });
+        if (res.error) { toast(res.error); btn.disabled = false; return; }
+        await renderAdmins();
+        loadMe();      // in case you just changed your own access
+      };
+    });
+  }
+
+  $("admins-close").onclick = () => $("admins-overlay").classList.add("hidden");
+  dismissOnBackdrop("admins-overlay");
+
   // ── Batch import modal ────────────────────────────────────────
   // ── Batch import: paste → review/edit → commit ──
   let batchItems = [];   // [{ id, content, tags:[...] }]
@@ -3434,6 +3473,7 @@
     renderReviewList();
   }
 
+  $("admins-btn").onclick = openAdmins;
   $("review-subs-btn").onclick = openReview;
   $("review-close").onclick = () => $("review-overlay").classList.add("hidden");
   $("review-suggest-btn").onclick = reviewSuggestTags;
