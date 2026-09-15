@@ -9,6 +9,13 @@
   let currentUser = null;    // {id,name,email,picture} when signed in, else null
   let authEnabled = false;   // whether Google login is configured on the server
   let isAdmin = false;       // administrator session (unlocks List view + management)
+  // Authoring and reading were sharing one screen, so every tool an author needs sat
+  // permanently in a reader's layout. This splits them. Author is the default for an
+  // admin, so nothing changes until you ask for it; Read shows exactly what a visitor
+  // sees, which is also the quickest way to check how a change actually landed.
+  let authorView = (() => {
+    try { return localStorage.getItem("authorView") !== "0"; } catch (e) { return true; }
+  })();
   let embeddingsEnabled = false; // whether semantic features (search/recommender) are available
   let llmEnabled = false;    // whether text-generation features (tags/advice) are available
   let imagesEnabled = false; // whether tip-picture generation is configured on the server
@@ -79,8 +86,7 @@
     imagesLeftToday = data.images_remaining_today || 0;
     pendingCount = data.pending_submissions || 0;
     updateSearchModeUI();
-    const ab = $("view-advise");
-    if (ab) ab.style.display = embeddingsEnabled ? "" : "none";
+    applyAskVisibility();
     updateSuggestModeButtons();
     updateReviewBtn();
     renderAuth();
@@ -171,12 +177,26 @@
         parts.push(`<a class="btn google-btn" href="/login" title="Sign in to save favourites & keep a journal">Sign in<span class="provider"> with Google</span></a>`);
       }
     }
+    // Author / Read is an admin's own switch, so it sits with the admin marker rather
+    // than in the account menu: it is used often and needs to be one press away.
+    if (isAdmin) {
+      parts.push(
+        `<div class="seg mode-seg" role="group" aria-label="Admin view">` +
+          `<button class="seg-btn${authorView ? " active" : ""}" data-author="1" ` +
+            `title="Show the authoring tools">Author</button>` +
+          `<button class="seg-btn${authorView ? "" : " active"}" data-author="0" ` +
+            `title="See the app as a reader does">Read</button>` +
+        `</div>`);
+    }
     // An active admin session is always visible and exitable, Google or no Google.
     if (isAdmin && !currentUser) {
       parts.push(`<span class="admin-badge" title="Administrator">ADMIN</span>` +
         `<button class="btn secondary" id="admin-logout-btn">Exit admin</button>`);
     }
     el.innerHTML = parts.join("");
+    el.querySelectorAll(".mode-seg .seg-btn").forEach(b => {
+      b.onclick = () => setAuthorView(b.dataset.author === "1");
+    });
     if (!currentUser) {
       $("help-open-btn").onclick = openHelp;
       $("theme-cycle-btn").onclick = () => {
@@ -217,18 +237,40 @@
     if (t) t.setAttribute("aria-expanded", "false");
   }
 
-  // Show/hide List view + management based on role, then render the right view.
+  // Ask needs the semantic index, and it is a reading feature: it shows in Read view and
+  // for every ordinary visitor, and stays out of the author's toolbar.
+  function applyAskVisibility() {
+    const ab = $("view-advise");
+    if (ab) ab.style.display = (embeddingsEnabled && !authoring()) ? "" : "none";
+  }
+
+  // Whether the authoring surface is on: admin, and not currently reading.
+  function authoring() { return isAdmin && authorView; }
+
+  function setAuthorView(on) {
+    authorView = !!on;
+    try { localStorage.setItem("authorView", authorView ? "1" : "0"); } catch (e) {}
+    applyRolePermissions();
+  }
+
+  // Show/hide the authoring surface, then render the right view. One place decides,
+  // so there is no second opinion about what an admin is looking at.
   function applyRolePermissions() {
-    $("view-toggle").style.display = "flex";              // Network + Cards + Ask for everyone
-    $("view-list").style.display = isAdmin ? "" : "none"; // List is admin-only
-    $("mgmt-wrap").style.display = isAdmin ? "" : "none";
-    if (!isAdmin) { activeTags = []; selectedTip = null; } // no sidebar to manage a tag filter
+    const author = authoring();
+    document.documentElement.setAttribute("data-mode", author ? "author" : "read");
+    $("view-toggle").style.display = "flex";           // Network + Cards for everyone
+    $("view-list").style.display = author ? "" : "none";
+    $("mgmt-wrap").style.display = author ? "" : "none";
+    applyAskVisibility();
+    if (!author) { activeTags = []; selectedTip = null; $("detail-pane").classList.add("hidden"); }
     closeMgmtMenu();
-    loadSidebar();                                        // still populates allTags (network tiers)
+    loadSidebar();                                     // still populates allTags (network tiers)
     let v = currentView;
-    if (!isAdmin && v === "list") v = "network";          // non-admins can't use List
+    if (!author && v === "list") v = "network";        // the authoring list is not there
+    if (author && v === "advise") v = "list";         // Ask is not part of the author's toolkit
     if (!currentUser && v === "favorites") v = "network"; // Favorites needs a signed-in user
     setView(v);
+    renderAuth();                                      // the toggle reflects the new state
   }
 
   async function googleSignOut() {
