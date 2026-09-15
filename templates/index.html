@@ -54,6 +54,7 @@
         <button class="view-btn" id="view-network">Network</button>
         <button class="view-btn" id="view-cards">Cards</button>
         <button class="view-btn" id="view-advise" style="display:none">Ask</button>
+
         <button class="view-btn" id="view-favorites" style="display:none">Favorites</button>
       </div>
       <div class="tb-group" id="tb-search">
@@ -73,23 +74,29 @@
         <button class="btn secondary" id="mgmt-toggle" aria-label="Tips and tags management"><svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="15" height="15"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2"/><circle cx="15" cy="12" r="2"/><circle cx="8" cy="18" r="2"/></svg><span class="btn-label">Tips &amp; Tags Management</span><span class="mgmt-caret" aria-hidden="true">▾</span></button>
         <div id="mgmt-menu" class="hidden">
           <button class="btn secondary" id="add-tip-btn">+ Add Tip</button>
-          <button class="btn secondary" id="batch-import-btn">Batch import tips</button>
-          <button class="btn secondary" id="import-tags-btn">Import tags</button>
-          <button class="btn secondary" id="apply-tag-btn">Apply a tag to tips</button>
-          <button class="btn secondary" id="manage-tags-btn">Delete tags</button>
           <button class="btn secondary" id="review-subs-btn">Review submissions</button>
-          <button class="btn secondary" id="admins-btn">Who can administer…</button>
-          <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">Rebuild semantic index</button>
-          <button class="btn secondary" id="manage-paths-btn">Curated paths</button>
-          <button class="btn secondary" id="usage-stats-btn">Usage stats</button>
-          <button class="btn secondary" id="sync-images-btn" title="Attach newly deployed tip pictures to their tips">Sync tip pictures</button>
-          <div class="mgmt-sep"></div>
-          <button class="btn secondary" id="export-xlsx-btn">Export all tips (Excel)</button>
-          <button class="btn secondary" id="import-xlsx-btn">Import tips from Excel…</button>
-          <input id="import-xlsx-file" type="file" accept=".xlsx" hidden>
-          <div class="mgmt-sep"></div>
-          <button class="btn secondary mgmt-danger" id="clear-tips-btn">Clear all tips…</button>
-          <button class="btn secondary mgmt-danger" id="clear-all-tags-btn">Clear all tags…</button>
+          <button class="btn secondary" id="apply-tag-btn">Apply a tag to tips</button>
+
+          <details class="mgmt-group">
+            <summary>Library upkeep</summary>
+            <button class="btn secondary" id="batch-import-btn">Batch import tips</button>
+            <button class="btn secondary" id="manage-paths-btn">Curated paths</button>
+            <button class="btn secondary" id="import-tags-btn">Import tags</button>
+            <button class="btn secondary" id="rebuild-embeddings-btn" title="Build the semantic (Meaning) index for all tips">Rebuild semantic index</button>
+            <button class="btn secondary" id="sync-images-btn" title="Attach newly deployed tip pictures to their tips">Sync tip pictures</button>
+            <button class="btn secondary" id="usage-stats-btn">Usage stats</button>
+            <button class="btn secondary" id="admins-btn">Who can administer…</button>
+            <button class="btn secondary" id="export-xlsx-btn">Export all tips (Excel)</button>
+            <button class="btn secondary" id="import-xlsx-btn">Import tips from Excel…</button>
+            <input id="import-xlsx-file" type="file" accept=".xlsx" hidden>
+          </details>
+
+          <details class="mgmt-group mgmt-group-danger">
+            <summary>Irreversible</summary>
+            <button class="btn secondary mgmt-danger" id="manage-tags-btn">Delete tags</button>
+            <button class="btn secondary mgmt-danger" id="clear-tips-btn">Clear all tips…</button>
+            <button class="btn secondary mgmt-danger" id="clear-all-tags-btn">Clear all tags…</button>
+          </details>
         </div>
       </div>
       </div>
@@ -288,10 +295,10 @@
         </select>
         <button class="btn" id="add-tag-btn">Add</button>
       </div>
-      <div id="tag-palette-wrap">
-        <h2 style="margin-top:4px">Add from existing tags</h2>
+      <details id="tag-palette-wrap">
+        <summary>Browse all tags</summary>
         <div id="tag-palette"></div>
-      </div>
+      </details>
     </div>
     <!-- One sticky commit bar: Save is always in reach; Delete is demoted to a quiet
          corner of the same bar (frequency should drive prominence, and Delete is rare). -->

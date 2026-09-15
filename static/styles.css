@@ -1570,3 +1570,46 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 .admin-name { font-size: var(--fs-sm); color: var(--text); }
 .admin-email { font-size: var(--fs-2xs); color: var(--text-tertiary); }
 .admin-toggle { margin-left: auto; flex: 0 0 auto; }
+
+/* ── Author view vs Read view ──
+   The heart is a reader's control. In the authoring list it was 207 of the 262 visible
+   controls on screen and sat in the tab order ahead of every tip, so it goes while you
+   are writing and comes back the moment you switch to Read. */
+[data-mode="author"] #tip-list .vote-col { display: none; }
+[data-mode="author"] #tip-list .tip-card { padding-left: 18px; }
+
+.mode-seg { padding: 2px; }
+.mode-seg .seg-btn { padding: 4px 10px; font-size: var(--fs-2xs); }
+
+/* ── Management menu: frequency drives prominence, danger sits apart ── */
+.mgmt-group { margin-top: var(--s-2); }
+.mgmt-group > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  font-size: var(--fs-2xs); color: var(--text-tertiary);
+  padding: 6px 10px; display: flex; align-items: center; gap: 6px;
+  border-top: 1px solid var(--border-subtle);
+}
+.mgmt-group > summary::-webkit-details-marker { display: none; }
+.mgmt-group > summary::before {
+  content: "\25b8"; font-size: var(--fs-3xs);
+  transition: transform var(--motion-fast) var(--ease); display: inline-block;
+}
+.mgmt-group[open] > summary::before { transform: rotate(90deg); }
+.mgmt-group > summary:hover { color: var(--text-secondary); }
+.mgmt-group-danger > summary { color: var(--danger); }
+
+/* ── The tag palette: one mechanism on screen at a time ──
+   All 27 tags were rendered permanently, directly beneath an autocomplete doing the
+   same job. The list is still one press away for when you cannot recall a name. */
+#tag-palette-wrap > summary {
+  cursor: pointer; list-style: none; user-select: none;
+  font-size: var(--fs-2xs); color: var(--text-tertiary);
+  padding: 4px 0; display: flex; align-items: center; gap: 6px;
+}
+#tag-palette-wrap > summary::-webkit-details-marker { display: none; }
+#tag-palette-wrap > summary::before {
+  content: "\25b8"; font-size: var(--fs-3xs);
+  transition: transform var(--motion-fast) var(--ease); display: inline-block;
+}
+#tag-palette-wrap[open] > summary::before { transform: rotate(90deg); }
+#tag-palette-wrap > summary:hover { color: var(--text-secondary); }
