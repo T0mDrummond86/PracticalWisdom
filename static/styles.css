@@ -1572,11 +1572,9 @@ label { display: block; font-size: var(--fs-xs); color: var(--text-secondary); f
 .admin-toggle { margin-left: auto; flex: 0 0 auto; }
 
 /* ── Author view vs Read view ──
-   The heart is a reader's control. In the authoring list it was 207 of the 262 visible
-   controls on screen and sat in the tab order ahead of every tip, so it goes while you
-   are writing and comes back the moment you switch to Read. */
-[data-mode="author"] #tip-list .vote-col { display: none; }
-[data-mode="author"] #tip-list .tip-card { padding-left: 18px; }
+   The hearts stay in the authoring list. They are the biggest single block of controls
+   on that screen, but removing them was a separate proposal that was not taken up, and
+   Author/Read is about which SURFACE you are on, not about editing the list itself. */
 
 .mode-seg { padding: 2px; }
 .mode-seg .seg-btn { padding: 4px 10px; font-size: var(--fs-2xs); }
