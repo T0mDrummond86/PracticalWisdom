@@ -28,7 +28,7 @@ function houseRules(id, files, MAX_RATE) {
   assert.ok(!/border-radius:\s*(99|999|9999)px/.test(ui), "no pill");
   const classes = [...ui.matchAll(/\.(vis-[\w-]+)/g)].map(m => m[1]);
   assert.ok(classes.every(c => c === "vis-" + id || c.startsWith("vis-" + id + "-")), "classes prefixed: " + classes.join(","));
-  assert.match(ui, /T\.wonder2d\(/, "built on the shared runtime");
+  assert.match(ui, /\bTH?\.wonder2d\(/, "built on the shared runtime");
   // every lib export carries the Wonder's name (Altitude's tests/visual-namespace.test.js)
   const name = id.replace(/^pw-/, "");
   const lib = require(path.join(ROOT, files[0]));

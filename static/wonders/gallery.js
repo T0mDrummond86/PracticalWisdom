@@ -39,6 +39,7 @@
     };
     const dots = h("div", { class: "wonder-dots", "aria-hidden": "true" }, available.map(() => h("i")));
     const layer = h("div", { class: "wonder" }, stage, phrase, arrow("prev", "Previous animation"), arrow("next", "Next animation"), dots);
+    layer._wonder = () => handle && handle.hnd;   // verification: the live Wonder's handle, from the page
     const reading = T.tipReading ? T.tipReading(layer, { tipFor: o.tipFor, openTip: o.openTip }) : null;
     if (reading) layer.appendChild(reading.el);
     host.appendChild(layer);
