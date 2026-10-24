@@ -3028,6 +3028,7 @@
     $("advise-view").style.display = v === "advise" ? "flex" : "none";
     $("fav-list").style.display = v === "favorites" ? "flex" : "none";
     $("animations-view").style.display = v === "animations" ? "block" : "none";
+    $("tb-search").style.display = v === "animations" ? "none" : "";   // nothing to search in a Wonder; its room goes to the picture
     if (v !== "network") { stopSim(); $("net-tooltip").style.display = "none"; }
     if (v !== "animations") leaveAnimations();
     if (v === "favorites") renderFavList();

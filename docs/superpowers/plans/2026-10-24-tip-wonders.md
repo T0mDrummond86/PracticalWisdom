@@ -144,8 +144,31 @@ Rendering: paper, a few thousand short dark filings aligned along curved field l
 ## Task 7: Phone review gate (the pilot)
 
 - [ ] Each of the three at 390×844, deviceScaleFactor 2.625, live (not paused), plus 844×390 sideways: the line legible, nothing reading as eyes, a face, cracks or lightning, no small subject in an empty field, touch doing its physical thing, reduced motion at 10 fps still answering touch.
-- [ ] Write down what review rejected and carry it into Tasks 8–14.
-- [ ] Commit fixes.
+- [x] Write down what review rejected and carry it into Tasks 8–14.
+- [x] Commit fixes.
+
+**What the pilot review caught (2026-10-24), to carry into Tasks 8–14:**
+
+1. *Ask for a fine word field.* The default 3 px mask is too coarse for type at 40 px: Pencil's nib
+   came out 4 px fat and filled the letters' counters. Every Wonder's `wordsAt` returns `cell: 1.5`.
+2. *Measure the line on the real field, not only the test's.* A test's fake letters can be the wrong
+   thickness (Pencil's first fake letters were 15 px blocks). Each Wonder's `info()` reports its
+   line's coverage or progress, read live at phone size.
+3. *Every patch and clearing is a pareidolia check.* Reduction's machining rings centred under a
+   central light made a target; Filings drawing its letters from the scatter cleared an almond with
+   a dark band through it. Both are eyes. Keep centres off-frame and take a line's material from
+   nowhere visible.
+4. *A reveal must take seconds, and a test must say so.* Reduction first showed the whole line in
+   about 1 s, because a broad flame and a fast-levelling film dried the pan at once. Tests now require
+   at least 3 s from 10% to 90%.
+5. *No two state keys alike.* Reduction's state had `h` twice (the pan's height and the letters
+   array); the array won, and `s.h / 2` stringified 8,000 numbers per cell (NaN, 800 ms a step).
+6. *Paper is a texture you see through what lies on it.* Pencil's first tooth was stucco; low relief
+   with the grain showing through the graphite reads as paper.
+7. *The section hides the search bar*, so a phone turned sideways gives the Wonder 287 px, not 243.
+8. *Verification:* the browser pane here runs no animation frames while hidden, so every check
+   steps the Wonder by hand (`document.querySelector(".wonder")._wonder()._advance(s)`). Live frames
+   at phone size are for Tom's own phone.
 
 ## Tasks 8–14: the remaining seven
 
