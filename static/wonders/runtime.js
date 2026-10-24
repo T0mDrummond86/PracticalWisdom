@@ -32,6 +32,15 @@
     };
   }
 
+  // An "around" line, set in its own font exactly where the word field laid it out (wordfield.js
+  // rasterise: centred, line i at size/4 + 1.22 size (i + 1/2) below the field's top). For a line that
+  // sits in the scene rather than being made of it, type is crisper than the field's mask.
+  function wonderLine(g, field, fill) {
+    const lh = field.size * 1.22, cx = field.rect.x + field.rect.w / 2;
+    g.font = field.fontCss; g.textAlign = "center"; g.textBaseline = "middle"; g.fillStyle = fill;
+    field.lines.forEach((l, i) => g.fillText(l, cx, field.rect.y + field.size * 0.25 + lh * (i + 0.5)));
+  }
+
   function wonder2d(el, opts, spec) {
     opts = opts || {};
     const id = spec.id;
@@ -146,7 +155,7 @@
     };
   }
 
-  const api = { wonder2d, wonderRand, WONDER_EDGE: { x: EDGE_X, top: EDGE_TOP } };
+  const api = { wonder2d, wonderRand, wonderLine, WONDER_EDGE: { x: EDGE_X, top: EDGE_TOP } };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else globalThis.TH = Object.assign(globalThis.TH || {}, api);
 })();
