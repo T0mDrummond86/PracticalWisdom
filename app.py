@@ -1721,7 +1721,8 @@ def journal_feedback(tip_id):
 
 # ── Usage analytics: tiny anonymous-friendly event counts (what's used, not who) ──
 EVENT_NAMES = {"view_tip", "view_list", "view_network", "view_cards", "view_favorites",
-               "search_keyword", "search_meaning", "advise", "share_tip", "path_started"}
+               "search_keyword", "search_meaning", "advise", "share_tip", "path_started",
+               "view_animations"}
 
 
 @app.post("/api/events")

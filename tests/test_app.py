@@ -50,6 +50,19 @@ def test_index_serves_static(client):
     assert b"/static/styles.css" in r.data
 
 
+def test_animations_section_and_its_scripts(client):
+    # The Animations (demo) section: its tab and pane are in the page, the small catalogue
+    # loads with it, and the engine the section lazy-loads is served.
+    r = client.get("/")
+    assert b'id="view-animations"' in r.data
+    assert b"Animations (demo)" in r.data
+    assert b'id="animations-view"' in r.data
+    assert b"/static/wonders/catalogue.js" in r.data
+    for f in ("catalogue", "core", "fonts", "wordfield", "runtime", "reading", "gallery"):
+        assert client.get(f"/static/wonders/{f}.js").status_code == 200, f
+    assert client.get("/static/wonders/fonts/caveat.woff2").status_code == 200
+
+
 def test_index_links_pwa(client):
     # The page advertises itself as an installable PWA.
     r = client.get("/")
