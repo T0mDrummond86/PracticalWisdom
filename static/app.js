@@ -4,6 +4,8 @@
   let editingId = null;  // null = creating a new tip; otherwise the tip id being edited
   let currentView = "list";  // "list" | "network" | "cards"
   let cardCurrent = null;    // card view: the tip currently shown
+  // Animations (demo): the scripts' load, the gallery showing, the Wonder asked for, the tips
+  let wondersLoad = null, wondersShown = null, wonderAsked = null, wonderTips = null;
   let cardNextId = null;     // card view: the suggested next tip
   let cardBackStack = [];    // card view: previously shown tips (for Back)
   let currentUser = null;    // {id,name,email,picture} when signed in, else null
@@ -262,12 +264,14 @@
     $("view-list").style.display = author ? "" : "none";
     $("mgmt-wrap").style.display = author ? "" : "none";
     applyAskVisibility();
+    $("view-animations").style.display = author ? "none" : "";   // a reading feature, like Ask
     if (!author) { activeTags = []; selectedTip = null; $("detail-pane").classList.add("hidden"); }
     closeMgmtMenu();
     loadSidebar();                                     // still populates allTags (network tiers)
     let v = currentView;
     if (!author && v === "list") v = "network";        // the authoring list is not there
     if (author && v === "advise") v = "list";         // Ask is not part of the author's toolkit
+    if (author && v === "animations") v = "list";     // nor is the Animations demo
     if (!currentUser && v === "favorites") v = "network"; // Favorites needs a signed-in user
     setView(v);
     renderAuth();                                      // the toggle reflects the new state
@@ -2999,6 +3003,7 @@
     $("view-cards").classList.toggle("active", v === "cards");
     $("view-advise").classList.toggle("active", v === "advise");
     $("view-favorites").classList.toggle("active", v === "favorites");
+    $("view-animations").classList.toggle("active", v === "animations");
     renderCurrentView();
   }
 
@@ -3022,11 +3027,15 @@
     $("card-view").style.display = v === "cards" ? "flex" : "none";
     $("advise-view").style.display = v === "advise" ? "flex" : "none";
     $("fav-list").style.display = v === "favorites" ? "flex" : "none";
+    $("animations-view").style.display = v === "animations" ? "block" : "none";
+    $("tb-search").style.display = v === "animations" ? "none" : "";   // nothing to search in a Wonder; its room goes to the picture
     if (v !== "network") { stopSim(); $("net-tooltip").style.display = "none"; }
+    if (v !== "animations") leaveAnimations();
     if (v === "favorites") renderFavList();
     else if (v === "network") buildNetwork();
     else if (v === "cards") enterCardView();
     else if (v === "advise") enterAdviseView();
+    else if (v === "animations") enterAnimations();
     else if (v === "list") loadTips(activeTags.join(","));
   }
 
@@ -3109,6 +3118,8 @@
     document.querySelectorAll("#fav-list .tip-card, #search-results .tip-card").forEach(c =>
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id));
     $("practice-tip-btn").style.display = currentUser ? "" : "none";
+    const wonder = window.TH && TH.wonderForTip ? TH.wonderForTip(tip) : null;
+    $("wonder-tip-btn").style.display = wonder && !authoring() ? "" : "none";
     track("view_tip", tip.id);
     loadJournal(tip);   // the signed-in user's private journal for this tip
   }
@@ -3526,6 +3537,7 @@
   $("view-network").onclick = () => setView("network");
   $("view-cards").onclick = () => setView("cards");
   $("view-advise").onclick = () => setView("advise");
+  $("view-animations").onclick = () => setView("animations");
   // While a curated path is active, Next follows its order; otherwise the recommender.
   $("cv-next").onclick = () => {
     if (cardPath) {
@@ -3818,6 +3830,64 @@
     if (r.error) { toast(r.error); return; }
     toast("Set as this week's practice — journal it as you go.");
   };
+
+  $("wonder-tip-btn").onclick = () => {
+    const wonder = selectedFav && window.TH && TH.wonderForTip ? TH.wonderForTip(selectedFav) : null;
+    if (!wonder) return;
+    wonderAsked = wonder;
+    closeFavAnalysis();
+    if (currentView === "animations") leaveAnimations();   // re-open on the one asked for
+    setView("animations");
+  };
+
+  // ── Animations (demo): ten tips as Wonders (static/wonders/, docs/wonders-plan.md) ──
+  // Touchable full-screen visuals, each made of one tip's own picture. The set is about
+  // 25 scripts plus a font per Wonder, so nothing loads until the section first opens.
+  function loadWonders() {
+    if (wondersLoad) return wondersLoad;
+    const ids = (window.TH && TH.WONDER_ORDER) || [];
+    const core = ["core", "fonts", "wordfield", "runtime"];
+    const files = core.concat(ids.map(id => "lib/visual-" + id), ids.map(id => "ui/visual-" + id), ["reading", "gallery"]);
+    // async=false: fetched together, run in this order. A Wonder that fails to load is
+    // left out (the gallery shows the ones registered); the engine failing is an error.
+    wondersLoad = Promise.all(files.map(f => new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "/static/wonders/" + f + ".js";
+      s.async = false;
+      s.onload = resolve;
+      s.onerror = () => (f.includes("/visual-") ? resolve() : reject(new Error(f)));
+      document.head.appendChild(s);
+    })));
+    wondersLoad.catch(() => { wondersLoad = null; });
+    return wondersLoad;
+  }
+  async function wonderTip(wonder) {
+    if (!wonderTips) {
+      const tips = await api("GET", "/api/tips");
+      if (!Array.isArray(tips)) return null;
+      wonderTips = tips;
+    }
+    const tip = TH.tipForWonder(wonderTips, wonder);
+    return tip ? { id: tip.id, content: displayText(tip.content), anecdote: displayText(tip.anecdote) } : null;
+  }
+  async function enterAnimations() {
+    if (wondersShown) return;
+    const pane = $("animations-view");
+    pane.innerHTML = SPINNER;
+    try { await loadWonders(); }
+    catch (e) { pane.innerHTML = ERR("Couldn't load the animations. Check your connection and try again."); return; }
+    if (currentView !== "animations" || wondersShown) return;   // left while loading
+    pane.innerHTML = "";
+    wondersShown = TH.renderWonders(pane, {
+      start: wonderAsked,
+      tipFor: wonderTip,
+      openTip: id => { const tip = (wonderTips || []).find(t => t.id === id); if (tip) openFavAnalysis(tip); },
+    });
+    wonderAsked = null;
+  }
+  function leaveAnimations() {
+    if (wondersShown) { wondersShown.teardown(); wondersShown = null; }
+  }
 
   // ── Curated paths: follow an ordered sequence in Cards view ──
   let cardPath = null;   // {id, title, tipIds, idx} while following a path

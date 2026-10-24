@@ -10,7 +10,7 @@
  *
  * Bump CACHE when you ship new shell assets — the old cache is purged on activate.
  */
-const CACHE = "pw-cache-v33";
+const CACHE = "pw-cache-v34";
 
 // ── Daily-tip notifications ──
 self.addEventListener("push", (event) => {
@@ -41,6 +41,7 @@ const SHELL = [
   "/static/styles.css",
   "/static/fonts/fraunces-600-latin.woff2",
   "/static/app.js",
+  "/static/wonders/catalogue.js",
   "/static/favicon.svg",
   "/static/manifest.json",
   "/static/icons/icon-192.png",
