@@ -264,14 +264,13 @@
     $("view-list").style.display = author ? "" : "none";
     $("mgmt-wrap").style.display = author ? "" : "none";
     applyAskVisibility();
-    $("view-animations").style.display = author ? "none" : "";   // a reading feature, like Ask
+    $("view-animations").style.display = "";   // the demo shows in both views, so the author can see it too
     if (!author) { activeTags = []; selectedTip = null; $("detail-pane").classList.add("hidden"); }
     closeMgmtMenu();
     loadSidebar();                                     // still populates allTags (network tiers)
     let v = currentView;
     if (!author && v === "list") v = "network";        // the authoring list is not there
     if (author && v === "advise") v = "list";         // Ask is not part of the author's toolkit
-    if (author && v === "animations") v = "list";     // nor is the Animations demo
     if (!currentUser && v === "favorites") v = "network"; // Favorites needs a signed-in user
     setView(v);
     renderAuth();                                      // the toggle reflects the new state
@@ -3119,7 +3118,7 @@
       c.classList.toggle("selected", Number(c.dataset.id) === tip.id));
     $("practice-tip-btn").style.display = currentUser ? "" : "none";
     const wonder = window.TH && TH.wonderForTip ? TH.wonderForTip(tip) : null;
-    $("wonder-tip-btn").style.display = wonder && !authoring() ? "" : "none";
+    $("wonder-tip-btn").style.display = wonder ? "" : "none";
     track("view_tip", tip.id);
     loadJournal(tip);   // the signed-in user's private journal for this tip
   }
