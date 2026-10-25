@@ -1,11 +1,14 @@
 (function () {
   "use strict";
   // Kerf (tip #20): a board in raking light, its growth rings running across it, under a coat of
-  // sanding dust that hides the line pencilled on it (lib/visual-pw-kerf.js). Touch to mark it, touch
-  // again to mark it again beside the first, and the third touch cuts along the mean of the two: the
-  // kerf opens edge to edge, sawdust spills from it, and the shaking board sheds its dust downhill
-  // until the line shows. No saw is ever shown: only wood, marks and dust. Each visit: the timber
-  // (pine, oak or walnut), its rings, the drifts of dust.
+  // sanding dust that hides the line pencilled on it (lib/visual-pw-kerf.js). Touch, and a steel rule
+  // runs out from the left end to half the board's length, its reading at its tip, and the half is
+  // marked; touch again and it measures from the right end, and its mark lands on the first. Pencilled
+  // dimensions either side of the mark show the two halves agree, and a squared line runs across the
+  // board through it. The third touch cuts on that line: the kerf opens edge to edge, sawdust spills
+  // from it, the shaking board sheds its dust downhill until the line shows, and the two equal halves
+  // part. No saw is shown: only wood, rule, marks and dust. Each visit: the timber (pine, oak or
+  // walnut), its rings, the drifts of dust, the board's length.
   const ID = "pw-kerf";
   const CSS = "";
   const WOOD = [
@@ -24,11 +27,11 @@
     for (let y = 0; y < cv.height; y++) for (let x = 0; x < cv.width; x++) {
       const o = (y * cv.width + x) * 4;
       let c;
-      if (y < b.y0 || y >= b.y1) {
+      if (y < b.y0 || y >= b.y1 || x < b.x0 || x >= b.x1) {
         c = BENCH.map(v => v * (0.8 + 0.4 * Math.min(1, Math.abs(y < b.y0 ? b.y0 - y : y - b.y1) / 40 < 1 ? 0.3 : 0)));
       } else {
         const gr = T.kerfGrain(s, x, y), up = T.kerfGrain(s, x, y - 1.5), dn = T.kerfGrain(s, x, y + 1.5);
-        const shade = (1 + 0.22 * (up - dn)) * (y - b.y0 < 2 ? 1.25 : 1) * (b.y1 - y < 3 ? 0.6 : 1);
+        const shade = (1 + 0.22 * (up - dn)) * (y - b.y0 < 2 ? 1.25 : 1) * (b.y1 - y < 3 ? 0.6 : 1) * (x - b.x0 < 2 ? 1.2 : 1) * (b.x1 - x < 3 ? 0.65 : 1);
         c = [0, 1, 2].map(k => (wood.early[k] + (wood.late[k] - wood.early[k]) * gr) * shade);
       }
       const u = x / cv.width - 0.5, v = y / cv.height - 0.5, vig = 1 - 0.55 * Math.min(1, Math.max(0, (Math.sqrt(u * u + v * v) - 0.25) / 0.45));
@@ -65,7 +68,8 @@
     const rand = T.wonderRand(st.s.seed ^ 0x51ed270b);
     for (let i = 0; i < field.mask.length; i++) {
       if (!field.mask[i]) continue;
-      px[i * 4] = 52; px[i * 4 + 1] = 50; px[i * 4 + 2] = 50; px[i * 4 + 3] = 150 + 70 * rand();
+      const c = st.s.species === 2 ? [228, 222, 208] : [52, 50, 50];   // on walnut, a white pencil
+      px[i * 4] = c[0]; px[i * 4 + 1] = c[1]; px[i * 4 + 2] = c[2]; px[i * 4 + 3] = 150 + 70 * rand();
     }
     g.putImageData(img, 0, 0);
     st.pencil = cv;
@@ -103,24 +107,88 @@
     g.fillRect(x + 1.4, b.y0, 0.8, y1 - b.y0);
   }
 
-  function draw(g, st, ctx) {
-    const s = st.s, b = s.board;
-    if (st.stale) paintDust(st, ctx);
-    g.globalCompositeOperation = "source-over";
+  // graphite on pine and oak; on walnut, as a carpenter would, a white pencil
+  let PENCIL = "rgba(40,38,38,0.92)";
+  const pencilFor = s => (PENCIL = s.species === 2 ? "rgba(236,230,216,0.92)" : "rgba(40,38,38,0.92)");
+  // a pencilled dimension: a line with an arrowhead at each end and the length written above it
+  function dimension(g, xa, xb, y, text) {
+    g.strokeStyle = PENCIL; g.fillStyle = PENCIL; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(xa, y); g.lineTo(xb, y);
+    for (const [x, d] of [[xa, 1], [xb, -1]]) { g.moveTo(x + 6 * d, y - 3); g.lineTo(x, y); g.lineTo(x + 6 * d, y + 3); }
+    g.stroke();
+    g.font = "600 11px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "bottom";
+    g.fillText(text, (xa + xb) / 2, y - 3);
+  }
+  // the steel rule, run out from one end to `reach` px along the top edge, graduated in mm
+  function rule(g, s, from, reach) {
+    const b = s.board, y = b.y0 + 4, hgt = 16, x0 = from === "left" ? b.x0 : b.x1 - reach, mm = s.pxPerMm;
+    const steel = g.createLinearGradient(0, y, 0, y + hgt);
+    steel.addColorStop(0, "rgb(226,226,218)"); steel.addColorStop(0.5, "rgb(196,198,192)"); steel.addColorStop(1, "rgb(150,152,148)");
+    g.fillStyle = "rgba(0,0,0,0.3)"; g.fillRect(x0 + 1.5, y + 2, reach, hgt);              // its shadow
+    g.fillStyle = steel; g.fillRect(x0, y, reach, hgt);
+    g.strokeStyle = "rgba(30,30,32,0.85)"; g.fillStyle = "rgba(30,30,32,0.9)"; g.lineWidth = 0.8;
+    g.font = "600 7px system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "top";
+    g.beginPath();
+    for (let m = 0; m * mm <= reach; m += 10) {
+      const x = from === "left" ? b.x0 + m * mm : b.x1 - m * mm, len = m % 100 === 0 ? 9 : m % 50 === 0 ? 6 : 3.5;
+      g.moveTo(x, y); g.lineTo(x, y + len);
+      if (m % 100 === 0 && m > 0) g.fillText(String(m / 10), x, y + 9);
+    }
+    g.stroke();
+    // the reading where the rule reaches
+    const tip = from === "left" ? x0 + reach : x0, read = Math.round(reach / mm);
+    g.fillStyle = "rgba(250,246,236,0.95)"; g.font = "700 12px system-ui, sans-serif"; g.textBaseline = "top";
+    g.fillText(read + " mm", tip, y + hgt + 4);
+  }
+  function scene(g, st, ctx) {
+    const T = globalThis.TH, s = st.s, b = s.board;
+    pencilFor(s);
     g.drawImage(st.board, 0, 0, ctx.W, ctx.H);
     if (st.pencil) g.drawImage(st.pencil, st.field.rect.x, st.field.rect.y, st.field.gw * st.field.cell, st.field.gh * st.field.cell);
     g.drawImage(st.dustNow, 0, 0, ctx.W, ctx.H);
-    // the marks: a crow's foot at the board's top edge, struck in a quarter of a second
-    g.strokeStyle = "rgba(40,38,38,0.92)"; g.lineWidth = 1.5; g.lineCap = "round";
+    g.lineCap = "round";
+    const half = s.mm / 2, dimY = b.y0 + 52;
     for (const m of s.marks) {
+      // the crow's foot at the top edge, struck in a quarter of a second, and the half dimensioned
       const u = Math.min(1, m.age / 0.25);
+      g.strokeStyle = PENCIL; g.lineWidth = 1.5;
       g.beginPath();
       g.moveTo(m.x, b.y0 + 3); g.lineTo(m.x, b.y0 + 3 + 30 * u);
       g.moveTo(m.x - 6 * u, b.y0 + 3 + 9 * u); g.lineTo(m.x, b.y0 + 12); g.lineTo(m.x + 6 * u, b.y0 + 3 + 9 * u);
       g.stroke();
+      if (m.age > 0.25) dimension(g, m.from === "left" ? b.x0 : m.x, m.from === "left" ? m.x : b.x1, dimY + (m.from === "left" ? 0 : 0), half + "");
     }
-    for (const c of s.cuts) slot(g, s, c.x, 1);
-    if (s.cut) slot(g, s, s.cut.x, s.cut.front);
+    // the two measurements agree: the line is squared across the board through the mark
+    if (s.marks.length === 2 && s.marks[1].age > 0.25) {
+      const x = (s.marks[0].x + s.marks[1].x) / 2, u = Math.min(1, (s.marks[1].age - 0.25) / 0.8);
+      g.strokeStyle = PENCIL; g.globalAlpha = 0.6; g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x, b.y0 + 34); g.lineTo(x, b.y0 + 34 + (b.y1 - b.y0 - 40) * u); g.stroke();
+      g.globalAlpha = 1;
+    }
+    if (s.rule) {
+      const [out, rest, back] = T.KERF.RULE, t = s.rule.t, full = half * s.pxPerMm;
+      const e = t < out ? 1 - Math.pow(1 - t / out, 3) : t < out + rest ? 1 : 1 - (t - out - rest) / back;
+      if (e > 0) rule(g, s, s.rule.from, full * e);
+    }
+    if (s.cut && s.part === 0) slot(g, s, s.cut.x, s.cut.front);   // once the halves part, the gap is the kerf
+  }
+
+  function draw(g, st, ctx) {
+    const s = st.s;
+    if (st.stale) paintDust(st, ctx);
+    g.globalCompositeOperation = "source-over";
+    // once cut, the two halves part a little: each drawn on its own side, moved apart
+    if (s.cut && s.part > 0) {
+      const gap = 4 * s.part * s.part * (3 - 2 * s.part), x = s.cut.x;
+      const b = s.board;
+      scene(g, st, ctx);                                    // the bench stays where it is
+      g.fillStyle = "rgb(" + BENCH.join(",") + ")"; g.fillRect(b.x0 - gap, b.y0, b.x1 - b.x0 + 2 * gap, b.y1 - b.y0);
+      for (const [side, dx] of [[0, -gap], [1, gap]]) {
+        // moved first, then cut to its own side of the kerf, so each half carries only its own wood
+        g.save(); g.translate(dx, 0); g.beginPath(); g.rect(side ? x + 1.4 : b.x0, b.y0 - 30, side ? b.x1 - x - 1.4 : x - 1.4 - b.x0, b.y1 - b.y0 + 30); g.clip();
+        scene(g, st, ctx); g.restore();
+      }
+    } else scene(g, st, ctx);
     // sawdust, fresh from the kerf
     g.fillStyle = "rgba(232,212,176,0.9)";
     for (const gr of s.grains) g.fillRect(gr.x - gr.r / 2, gr.y - gr.r / 2, gr.r, gr.r);

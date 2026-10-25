@@ -105,7 +105,17 @@ function fakeField() {
   }
   for (let y = 16; y < 18; y++) for (let x = 6; x < 50; x++) mask[y * gw + x] = 1;
   for (let y = 12; y < 23; y++) for (let x = 30; x < 32; x++) mask[y * gw + x] = 1;
-  return { cell, gw, gh, mask, lines: ["a", "b"], rect: { x: 10, y: 20, w: gw * cell, h: gh * cell } };
+  const rect = { x: 10, y: 20, w: gw * cell, h: gh * cell };
+  // px to the nearest letter cell, as wordfield.js's dist gives it (0 on a letter)
+  const dist = (x, y) => {
+    let best = Infinity;
+    const gx = (x - rect.x) / cell, gy = (y - rect.y) / cell;
+    for (let j = Math.max(0, Math.floor(gy) - 4); j <= Math.min(gh - 1, Math.floor(gy) + 4); j++)
+      for (let i = Math.max(0, Math.floor(gx) - 4); i <= Math.min(gw - 1, Math.floor(gx) + 4); i++)
+        if (mask[j * gw + i]) best = Math.min(best, Math.hypot((i + 0.5 - gx) * cell, (j + 0.5 - gy) * cell) - cell / 2);
+    return Math.max(0, best);
+  };
+  return { cell, gw, gh, mask, dist, lines: ["a", "b"], rect };
 }
 
 test("the letters thin to strokes that keep their shape and their order: one line, then the next, left to right", () => {
@@ -134,9 +144,9 @@ test("the line is written over a few seconds, stroke by stroke, and ends legible
   for (let k = 0; k < 200 && !wr.done; k++) L.pencilWrite(s, wr, 1 / 30);
   assert.ok(wr.done);
   const cov = L.pencilWriteCoverage(s, f);
-  assert.ok(cov > 0.5, "letters covered " + cov);
+  assert.ok(cov > 0.85, "letters covered " + cov);   // legible: a pencilled word reads as a solid line with grainy edges
   // nothing strays: graphite only within a nib's width of the letters
-  const reach = wr.radius + 2 * f.cell;
+  const reach = 2 * f.cell;   // the lead is held to the letters' own shape, to within a cell
   for (let i = 0; i < s.g.length; i++) {
     if (!s.g[i]) continue;
     const x = (i % s.gw + 0.5) * s.cell - f.rect.x, y = (Math.floor(i / s.gw) + 0.5) * s.cell - f.rect.y;

@@ -8,7 +8,7 @@
   // worked out once per size into a small image, and only the cells the lead touched are repainted.
   const ID = "pw-pencil";
   const CSS = "";
-  const ELEV = 0.36, RELIEF = 0.85;               // the light's height above the sheet (rad); the tooth's relief
+  const ELEV = 0.36, RELIEF = 0.55;               // the light's height above the sheet (rad); the tooth's relief
 
   function paperFor(s) {
     const T = globalThis.TH, gw = s.gw, gh = s.gh, look = s.look;
@@ -56,7 +56,7 @@
       if (!v) continue;
       const sheen = Math.max(0, lam[i] - 0.3) * 1.2 * v;
       px[i * 4] = 38 + 70 * sheen; px[i * 4 + 1] = 38 + 70 * sheen; px[i * 4 + 2] = 40 + 72 * sheen;
-      px[i * 4 + 3] = 255 * Math.min(0.95, 0.4 + 0.7 * v);
+      px[i * 4 + 3] = 255 * Math.min(0.97, 0.55 + 0.6 * v);
     }
     st.ig.putImageData(st.img, 0, 0, d.x0, d.y0, d.x1 - d.x0 + 1, d.y1 - d.y0 + 1);
   }
@@ -108,7 +108,9 @@
       // the graphite writes the line, a little above the middle of the sheet
       wordsMode: "become",
       wordsAt: (W, H) => {
-        const wide = W > H, size = wide ? Math.min(40, W / 21) : Math.min(40, W / 9.5);
+        // wide panes (a desktop) let the hand write larger, so the words read at arm's length;
+        // a phone, upright or sideways, stays within 40 px
+        const wide = W > H, size = wide ? Math.min(W / 21, H / 10) : Math.min(40, W / 9.5);
         // a fine mask (1.5 px, not the usual 3): the strokes are thinned and written along, so they need the detail
         return { size, cell: 1.5, at: { x: W / 2, y: H * (wide ? 0.44 : 0.4) }, maxWidth: W * (wide ? 0.72 : 0.84) };
       } }

@@ -75,8 +75,9 @@
     else { d.x0 = Math.min(d.x0, x0); d.y0 = Math.min(d.y0, y0); d.x1 = Math.max(d.x1, x1); d.y1 = Math.max(d.y1, y1); }
   }
 
-  // The nib at (x, y) px, pressing at pressure (0..1), radius px: lead on every high point under it
-  function pencilDeposit(s, x, y, pressure, radius) {
+  // The nib at (x, y) px, pressing at pressure (0..1), radius px: lead on every high point under it.
+  // keep(x, y), if given, is where the hand means the lead to go (the letter's own shape): none elsewhere.
+  function pencilDeposit(s, x, y, pressure, radius, keep) {
     const thr = 1 - pressure, r = Math.max(radius, s.cell * 0.75), c = s.cell;
     const x0 = Math.max(0, Math.floor((x - r) / c)), x1 = Math.min(s.gw - 1, Math.floor((x + r) / c));
     const y0 = Math.max(0, Math.floor((y - r) / c)), y1 = Math.min(s.gh - 1, Math.floor((y + r) / c));
@@ -88,6 +89,7 @@
         if (d > r) continue;
         const i = cy * s.gw + cx, t = s.tooth[i];
         if (t <= thr) continue;                      // a valley: the nib passes over it
+        if (keep && !keep((cx + 0.5) * c, (cy + 0.5) * c)) continue;
         const add = 0.5 * (1 - 0.6 * d / r) * Math.min(1, (t - thr) / 0.25);
         s.g[i] = Math.min(1, s.g[i] + add);
       }
@@ -185,16 +187,19 @@
     const total = paths.reduce((a, p) => a + p.len, 0);
     const speed = Math.min(1100, Math.max(100, total / 4));
     // a pencil's nib, as wide as the letters' strokes: half their width is their area over twice their length
-    const radius = Math.min(2.2, Math.max(1.3, length ? area * c / (2 * length) + 0.2 : 2));
+    // the nib reaches across the whole stroke; where the lead lands is held to the letter's own shape
+    // (to within a cell), so the words are the font's, written in the order a hand would write them
+    const radius = Math.min(5, Math.max(1.8, length ? area * c / (2 * length) * 1.6 + 1 : 2.5));
+    const keep = field.dist ? (x, y) => field.dist(x, y) <= c : null;
     const lifts = paths.map((p, k) => k === 0 ? 0 : Math.min(0.04, 0.01 + Math.hypot(p.pts[0][0] - paths[k - 1].pts[paths[k - 1].pts.length - 1][0], p.pts[0][1] - paths[k - 1].pts[paths[k - 1].pts.length - 1][1]) / (speed * 4)));
     const duration = total / speed + lifts.reduce((a, b) => a + b, 0);
     const r = rng(seed ^ 0x2545f491), wobble = Array.from({ length: 64 }, () => r());
-    return { paths, speed, radius, lifts, duration, wobble, i: 0, d: 0, next: 0, lift: 0, arc: 0, t: 0, done: !paths.length };
+    return { paths, speed, radius, keep, lifts, duration, wobble, i: 0, d: 0, next: 0, lift: 0, arc: 0, t: 0, done: !paths.length };
   }
-  // the hand's pressure, 0.7..0.9, drifting smoothly along the line
+  // the hand's pressure, 0.84..0.96, drifting smoothly along the line: firm enough that the words read
   function pressureAt(wr, arc) {
     const u = arc / 45, k = Math.floor(u), f = u - k, sm = f * f * (3 - 2 * f), w = wr.wobble;
-    return 0.7 + 0.2 * (w[k % 64] + (w[(k + 1) % 64] - w[k % 64]) * sm);
+    return 0.84 + 0.12 * (w[k % 64] + (w[(k + 1) % 64] - w[k % 64]) * sm);
   }
   function pointAt(p, d) {
     if (p.pts.length === 1) return p.pts[0];       // a dot: the i's and the full stop
@@ -212,7 +217,7 @@
       const d1 = Math.min(p.len, wr.d + tl * wr.speed);
       for (; wr.next <= d1 + 1e-9; wr.next += step) {
         const q = pointAt(p, wr.next);
-        pencilDeposit(s, q[0], q[1], pressureAt(wr, wr.arc + wr.next), wr.radius);
+        pencilDeposit(s, q[0], q[1], pressureAt(wr, wr.arc + wr.next), wr.radius, wr.keep);
       }
       const used = (d1 - wr.d) / wr.speed;
       tl -= used; wr.t += used; wr.d = d1;
