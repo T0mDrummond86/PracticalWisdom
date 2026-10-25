@@ -1,118 +1,105 @@
 (function () {
   "use strict";
-  // Bloom (tip #3): a bed of seedlings from above in soft light, each a pair of green seed leaves
-  // (lib/visual-pw-bloom.js). Touch, and the plants in a ring round your finger open into flower, then
-  // their neighbours, then theirs; the one under your finger opens last of all. The line was planted
-  // among them in another colour and shows as its plants bloom. Every flower's middle is pale: a
-  // dark-centred flower is an eye, and a bed of them is a crowd of eyes. Plants only ever open, so each
-  // is painted once more onto a kept layer whenever it reaches a new stage, bigger over smaller. Each
-  // visit: the two colours, and where the bed is thick.
+  // Bloom (tip #3): a meadow side-on in morning light, rows of plants going back to a low treeline,
+  // most in bud (lib/visual-pw-bloom.js). Touch, and pollen drifts from the nearest open flower to the
+  // buds round your finger; each opens as it arrives and sends its own pollen on, so the help travels,
+  // visibly, and multiplies until the whole meadow is in flower. The line hangs in the sky above it,
+  // grey while the meadow waits, coming into the flowers' colour as they open. Every flower's middle is
+  // pale (a dark-centred flower is an eye). Each visit: the meadow's colours, where the few early flowers
+  // are, the light.
   const ID = "pw-bloom";
   const CSS = "";
-  const PAIRS = [
-    { line: [250, 238, 206], bed: [128, 100, 178] },   // cream on violet
-    { line: [244, 196, 84], bed: [86, 118, 196] },     // gold on blue
-    { line: [242, 132, 108], bed: [226, 230, 240] },   // coral on white
+  const STIR = 0.5;                       // rad/s: stems stirring in the morning air (calm: under 0.8)
+  const MEADOWS = [
+    [[232, 92, 72], [246, 196, 70], [250, 244, 232]],     // poppy, buttercup, daisy
+    [[104, 132, 220], [246, 214, 92], [244, 240, 250]],   // cornflower, primrose, white
+    [[214, 108, 160], [250, 236, 210], [240, 160, 80]],   // campion, cream, marigold
   ];
-  const STAGES = 6, R = 4.4;
 
   function canvas(w, h) { const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
 
-  // one sprite per colour, stage and turn: stage 0 the seed leaves, 1 a bud, then the petals opening
-  function sprites(dpr, pair) {
-    const size = Math.ceil(2 * R * dpr) + 2, out = [];
-    for (const col of [pair.bed, pair.line]) {
-      const byStage = [];
-      for (let k = 0; k < STAGES; k++) {
-        const turns = [];
-        for (let t = 0; t < 8; t++) {
-          const cv = canvas(size, size), g = cv.getContext("2d");
-          g.translate(size / 2, size / 2); g.scale(dpr, dpr); g.rotate(t * 0.785 + 0.31 * (t % 3));
-          if (k === 0) {
-            g.fillStyle = "rgb(86,146,70)";
-            for (const sd of [-1, 1]) { g.beginPath(); g.ellipse(sd * 1.3, 0, 1.4, 0.75, 0, 0, 6.2832); g.fill(); }
-          } else if (k === 1) {
-            g.fillStyle = "rgb(86,146,70)"; g.beginPath(); g.arc(0, 0, 1.6, 0, 6.2832); g.fill();
-            g.fillStyle = "rgb(" + col + ")"; g.beginPath(); g.arc(0, 0, 0.9, 0, 6.2832); g.fill();
-          } else {
-            const u = (k - 1) / (STAGES - 2), pr = 1.1 + 1.3 * u, rr = 0.8 + 1.7 * u;
-            for (let p = 0; p < 5; p++) {
-              const a = p * 2 * Math.PI / 5, px = Math.cos(a) * rr, py = Math.sin(a) * rr;
-              const gr = g.createRadialGradient(px, py, 0, px, py, pr);
-              gr.addColorStop(0, "rgb(" + col.map(v => Math.min(255, v + 18)) + ")"); gr.addColorStop(1, "rgb(" + col.map(v => v * 0.82) + ")");
-              g.fillStyle = gr; g.beginPath(); g.arc(px, py, pr, 0, 6.2832); g.fill();
-            }
-            g.fillStyle = "rgb(250,238,176)"; g.beginPath(); g.arc(0, 0, 0.7 + 0.4 * u, 0, 6.2832); g.fill();
-          }
-          turns.push(cv);
-        }
-        byStage.push(turns);
-      }
-      out.push(byStage);
-    }
-    return { size, set: out };
-  }
-
   function create(ctx) {
     const T = globalThis.TH, s = T.bloomCreate({ seed: ctx.seed, w: ctx.W, h: ctx.H }), rand = T.wonderRand(ctx.seed ^ 0x13198a2e);
-    const pair = PAIRS[Math.floor(s.hue * PAIRS.length) % PAIRS.length], dpr = ctx.dpr;
-    const layer = canvas(ctx.W * dpr, ctx.H * dpr), g = layer.getContext("2d");
-    g.scale(dpr, dpr);
-    // the soil: dark, crumbly, a little lighter in drifts
-    g.fillStyle = "rgb(34,26,20)"; g.fillRect(0, 0, ctx.W, ctx.H);
-    for (let k = 0; k < ctx.W * ctx.H / 18; k++) {
-      const v = rand();
-      g.fillStyle = "rgba(" + (60 + 30 * v) + "," + (44 + 22 * v) + "," + (32 + 14 * v) + ",0.5)";
-      g.fillRect(rand() * ctx.W, rand() * ctx.H, 1 + rand(), 1 + rand());
+    const W = ctx.W, H = ctx.H, hz = s.horizon, bg = canvas(W, H), g = bg.getContext("2d");
+    const sky = g.createLinearGradient(0, 0, 0, hz);
+    sky.addColorStop(0, "rgb(70,104,150)"); sky.addColorStop(0.7, "rgb(176,190,200)"); sky.addColorStop(1, "rgb(240,226,196)");
+    g.fillStyle = sky; g.fillRect(0, 0, W, hz);
+    const sunX = W * (0.2 + 0.6 * rand()), haze = g.createRadialGradient(sunX, hz, 0, sunX, hz, Math.max(W, H) * 0.5);
+    haze.addColorStop(0, "rgba(255,236,196,0.55)"); haze.addColorStop(1, "rgba(255,236,196,0)");
+    g.fillStyle = haze; g.fillRect(0, 0, W, hz);
+    // a soft far treeline
+    g.fillStyle = "rgba(76,104,96,0.8)";
+    g.beginPath(); g.moveTo(0, hz);
+    for (let x = 0; x <= W; x += 3) g.lineTo(x, hz - 6 - 10 * Math.abs(Math.sin(x * 0.045 + rand() * 0.2)) - 6 * Math.abs(Math.sin(x * 0.013)));
+    g.lineTo(W, hz); g.closePath(); g.fill();
+    // the meadow: hazy green far off, deeper near, grass blades thickening toward you
+    const field = g.createLinearGradient(0, hz, 0, H);
+    field.addColorStop(0, "rgb(128,152,104)"); field.addColorStop(1, "rgb(44,74,40)");
+    g.fillStyle = field; g.fillRect(0, hz, W, H - hz);
+    for (let k = 0; k < W * (H - hz) / 14; k++) {
+      const y = hz + (H - hz) * Math.pow(rand(), 0.8), u = (y - hz) / (H - hz), x = rand() * W, len = (3 + 9 * rand()) * (0.4 + u);
+      g.strokeStyle = "rgba(" + [70 + 70 * rand(), 110 + 60 * rand(), 50 + 30 * rand()].map(Math.round).join(",") + ",0.5)";
+      g.lineWidth = 0.6 + u; g.beginPath(); g.moveTo(x, y); g.lineTo(x + (rand() - 0.5) * 3, y - len); g.stroke();
     }
-    const sp = sprites(dpr, pair), stage = new Int8Array(s.n).fill(-1);
-    const st = { s, layer, lg: g, sp, stage, dpr };
-    stamp(st, true);
-    return st;
+    return { s, bg, palette: MEADOWS[Math.floor(s.hue * MEADOWS.length) % MEADOWS.length], field: null };
   }
-
-  // paint every plant that has reached a new stage since it was last painted
-  function stamp(st, all) {
-    const s = st.s, g = st.lg, sp = st.sp, full = sp.size / st.dpr;
-    for (let i = 0; i < s.n; i++) {
-      const k = Math.min(STAGES - 1, Math.floor(s.open[i] * (STAGES - 1) + (s.open[i] > 0 ? 1 : 0)));
-      if (!all && k <= st.stage[i]) continue;
-      st.stage[i] = k;
-      // the line's own plants, set tight along its strokes, are smaller
-      const img = sp.set[s.letter[i]][k][Math.floor(s.turn[i] * 8)], d = s.small && s.small[i] ? full * 0.62 : full;
-      g.drawImage(img, s.x[i] - d / 2, s.y[i] - d / 2, d, d);
-    }
-  }
-
-  function words(st, field) {
-    let cells = 0; for (let i = 0; i < field.mask.length; i++) cells += field.mask[i];
-    const pts = field.points(Math.max(300, Math.min(2400, Math.round(cells * 0.35))));
-    globalThis.TH.bloomLetters(st.s, field.inside, pts);
-    st.stage = new Int8Array(st.s.n).fill(-1);      // the bed has more plants now; paint them all once
-    st.field = field;
-    stamp(st, false);
-  }
+  function words(st, field) { st.field = field; }
   function step(st, dt) { globalThis.TH.bloomStep(st.s, dt); }
-  function draw(g, st, ctx) {
-    stamp(st, false);
-    g.drawImage(st.layer, 0, 0, ctx.W, ctx.H);
-    // soft light: brighter in the middle of the bed, falling away to its edges
-    if (!st.vg) {
-      st.vg = g.createRadialGradient(ctx.W * 0.45, ctx.H * 0.4, Math.min(ctx.W, ctx.H) * 0.25, ctx.W * 0.45, ctx.H * 0.4, Math.hypot(ctx.W, ctx.H) * 0.6);
-      st.vg.addColorStop(0, "rgba(4,5,10,0)"); st.vg.addColorStop(1, "rgba(4,5,10,0.55)");
+
+  const colourOf = (st, p) => st.palette[Math.floor(p.tint * st.palette.length) % st.palette.length];
+
+  function plant(g, st, p, t) {
+    const sway = Math.sin(t * STIR + p.phase) * 1.6 * p.scale, hx = p.hx + sway, hy = p.hy, sc = p.scale, o = p.open;
+    // stem, and a leaf part way up
+    g.strokeStyle = "rgb(58,104,50)"; g.lineWidth = Math.max(0.8, 1.3 * sc);
+    g.beginPath(); g.moveTo(p.x, p.y); g.quadraticCurveTo(p.x, (p.y + hy) / 2, hx, hy); g.stroke();
+    g.fillStyle = "rgb(70,124,58)";
+    g.beginPath(); g.ellipse(p.x + 3 * sc, p.y - (p.y - hy) * 0.35, 4 * sc, 1.4 * sc, -0.5, 0, 6.2832); g.fill();
+    if (o <= 0) {                                             // a bud: a closed green teardrop
+      g.fillStyle = "rgb(92,140,70)";
+      g.beginPath(); g.ellipse(hx, hy - 2.5 * sc, 2.2 * sc, 3.6 * sc, 0, 0, 6.2832); g.fill();
+      return;
     }
-    g.fillStyle = st.vg; g.fillRect(0, 0, ctx.W, ctx.H);
+    // opening: petals spreading from the bud, greening into their colour, round a pale middle
+    const col = colourOf(st, p), e = o * o * (3 - 2 * o), r = (2 + 4.5 * e) * sc, len = (3 + 3.5 * e) * sc;
+    const c = col.map(v => Math.round(92 + (v - 92) * Math.min(1, o * 1.5)));
+    g.fillStyle = "rgb(" + c + ")";
+    for (let k = 0; k < 6; k++) {
+      const a = -Math.PI / 2 + (k - 2.5) * (0.25 + 0.75 * e) * 0.95;
+      g.beginPath(); g.ellipse(hx + Math.cos(a) * r * 0.6, hy - 2 * sc + Math.sin(a) * r * 0.6, len * 0.62, len * 0.3, a, 0, 6.2832); g.fill();
+    }
+    g.fillStyle = "rgb(250,234,160)";
+    g.beginPath(); g.arc(hx, hy - 2 * sc, (0.8 + 1.4 * e) * sc, 0, 6.2832); g.fill();
+  }
+
+  function draw(g, st, ctx) {
+    const T = globalThis.TH, s = st.s;
+    g.drawImage(st.bg, 0, 0, ctx.W, ctx.H);
+    // the line in the sky: grey while the meadow waits, coming into the flowers' colour as it opens
+    if (st.field) {
+      const c = T.bloomColour(s), a = st.palette[0], grey = [96, 104, 112], mix = grey.map((v, k) => Math.round(v + (a[k] - v) * c));
+      T.wonderLine(g, st.field, "rgba(" + mix + "," + (0.55 + 0.4 * c).toFixed(2) + ")");
+    }
+    for (const p of s.plants) plant(g, st, p, ctx.t);
+    // pollen on its way, along a lifting curve, with a short fading trail
+    g.globalCompositeOperation = "lighter";
+    for (const m of s.motes) {
+      if (m.t <= 0) continue;
+      const A = s.plants[m.from], B = s.plants[m.to];
+      for (let k = 0; k < 3; k++) {
+        const u = Math.max(0, m.t / m.dur - k * 0.04), cx = (A.hx + B.hx) / 2 + m.drift, cy = Math.min(A.hy, B.hy) - m.lift;
+        const x = (1 - u) * (1 - u) * A.hx + 2 * u * (1 - u) * cx + u * u * B.hx, y = (1 - u) * (1 - u) * A.hy + 2 * u * (1 - u) * cy + u * u * B.hy;
+        g.fillStyle = "rgba(255,226,120," + (0.75 - 0.25 * k).toFixed(2) + ")";
+        g.beginPath(); g.arc(x, y, 1.6 - 0.35 * k, 0, 6.2832); g.fill();
+      }
+    }
+    g.globalCompositeOperation = "source-over";
   }
   function touch(st, kind, x, y) { if (kind === "down") globalThis.TH.bloomTouch(st.s, x, y); }
-  function resize(st, ctx) {
-    const field = st.field;
-    Object.assign(st, create(ctx), { vg: null });
-    if (field) { words(st, field); stamp(st, true); }
-  }
+  function resize(st, ctx) { const f = st.field; Object.assign(st, create(ctx)); st.field = f; }
   function info(st) {
     const T = globalThis.TH, s = st.s;
-    let open = 0; for (let i = 0; i < s.n; i++) if (s.open[i] > 0.5) open++;
-    return { plants: s.n, open: +(open / s.n).toFixed(2), line: +T.bloomShown(s).toFixed(2), letterPlants: s.letterPlants.length };
+    return { plants: s.plants.length, open: s.plants.filter(p => p.open >= 1).length, motes: s.motes.length, colour: +T.bloomColour(s).toFixed(2) };
   }
 
   function mount(el, opts) {
@@ -121,11 +108,11 @@
 
   const api = { VISUALS: Object.assign((globalThis.TH && globalThis.TH.VISUALS) || {}, {
     [ID]: { id: ID, name: "Bloom", phrase: "Help others to flourish.", mount,
-      // planted across the middle of the bed
-      wordsMode: "revealed",
+      // in the sky over the meadow (its horizon at 56% of the height, 50% sideways)
+      wordsMode: "around",
       wordsAt: (W, H) => {
-        const wide = W > H, size = wide ? Math.min(40, W / 20) : Math.min(40, W / 8.5);
-        return { size, cell: 1.5, at: { x: W / 2, y: H * (wide ? 0.46 : 0.44) }, maxWidth: W * (wide ? 0.62 : 0.84) };
+        const wide = W > H, size = wide ? Math.min(W / 20, H / 10) : Math.min(40, W / 9);
+        return { size, cell: 1.5, at: { x: W / 2, y: H * (wide ? 0.34 : 0.3) }, maxWidth: W * (wide ? 0.7 : 0.84) };
       } }
   }) };
   globalThis.TH = Object.assign(globalThis.TH || {}, api);

@@ -15,8 +15,8 @@
     { wonder: "pw-swing", id: 122, match: "swings and roundabouts", font: "syne" },
     { wonder: "pw-threshold", id: 181, match: "go outside into the sun", font: "outfit" },
     { wonder: "pw-stalagmite", id: 12, match: "tiny successes", font: "fell" },
-    { wonder: "pw-shoot", id: 65, match: "push through", font: "playfair" },
-    { wonder: "pw-bloom", id: 3, match: "help others to flourish", font: "fraunces" },
+    { wonder: "pw-shoot", id: 65, match: "push through", font: "fraunces" },
+    { wonder: "pw-bloom", id: 3, match: "help others to flourish", font: "playfair" },
     { wonder: "pw-petal", id: 107, match: "bringing my mind back", font: "shippori" },
   ];
   const WONDER_ORDER = WONDER_TIPS.map(e => e.wonder);

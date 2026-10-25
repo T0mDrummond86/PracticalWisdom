@@ -1,99 +1,158 @@
 (function () {
   "use strict";
-  // Stalagmite (tip #12): a cave floor from above in close lamplight, wet dark limestone, and the line
-  // coming up out of it in calcite, ring on ring, a drop at a time (lib/visual-pw-stalagmite.js). The
-  // mineral is lit as relief, its edges catching the lamp, so the letters stand up off the floor as they
-  // build. Each drop shows as a faint splash. Touch to let a drop fall there. A dark cave is a small
-  // subject in an empty field, so the lamp is close and its light fills the frame. Each visit: the
-  // mineral's colour, the lamp's side and warmth, the drips' pace.
+  // Stalagmite (tip #12): a cave wall side-on in close lamplight (lib/visual-pw-stalagmite.js). The line
+  // stands on rock ledges; above each line hang stalactites, from the ceiling or from the underside of
+  // the ledge above. At every tip a drop gathers, swells, lets go and falls, glinting, onto the letters
+  // below, splashes, and leaves a layer of calcite; the letters rise off their ledges a layer at a time,
+  // banded the way a stalagmite is, the freshest layer wet and shining. Touch to let the nearest drop
+  // fall now. Each visit: the mineral's colour, the lamp's side and warmth, the water's pace.
   const ID = "pw-stalagmite";
   const CSS = "";
 
-  function canvas(w, h) { const c = document.createElement("canvas"); c.width = Math.max(1, w); c.height = Math.max(1, h); return c; }
+  function canvas(w, h) { const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); return c; }
 
   function create(ctx) {
     const T = globalThis.TH, s = T.stalagmiteCreate({ seed: ctx.seed, w: ctx.W, h: ctx.H }), rand = T.wonderRand(ctx.seed ^ 0x6a09e667);
-    const gw = s.gw, gh = s.gh, n = gw * gh;
-    // the floor: wet limestone, mottled at two scales, in a pool of lamplight from just above one side
-    const lat = (sp) => { const lw = Math.ceil(gw / sp) + 2, t = new Float32Array(lw * (Math.ceil(gh / sp) + 2)); for (let i = 0; i < t.length; i++) t[i] = rand(); return { sp, lw, t }; };
-    const big = lat(26), small = lat(5);
-    const vn = (L, x, y) => { const fx = x / L.sp, fy = y / L.sp, ix = Math.floor(fx), iy = Math.floor(fy), u = fx - ix, v = fy - iy, a = L.t[iy * L.lw + ix], b = L.t[iy * L.lw + ix + 1], c = L.t[(iy + 1) * L.lw + ix], d = L.t[(iy + 1) * L.lw + ix + 1], su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v); return a + (b - a) * su + (c - a) * sv + (a - b - c + d) * su * sv; };
-    const lampX = gw * (0.5 + 0.28 * s.lampSide), lampY = gh * 0.12, sig = Math.sqrt(gw * gh) * 0.78;
-    const rock = new Float32Array(n * 3), lamp = new Float32Array(n);
-    const warm = [255, 214 - 30 * s.lampWarm, 168 - 60 * s.lampWarm].map(v => v / 255);
-    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) {
-      const i = y * gw + x, m = 0.6 * vn(big, x, y) + 0.4 * vn(small, x, y);
-      const l = 0.16 + 1.0 * Math.exp(-((x - lampX) ** 2 + (y - lampY) ** 2) / (2 * sig * sig));
-      lamp[i] = l;
-      const base = 40 + 34 * m;
-      rock[i * 3] = base * 1.05 * l * warm[0]; rock[i * 3 + 1] = base * 0.95 * l * warm[1]; rock[i * 3 + 2] = base * 0.88 * l * warm[2];
+    const lampX = ctx.W * (0.5 + 0.42 * s.lampSide), lampY = ctx.H * 0.3, warm = [255, 214 - 30 * s.lampWarm, 168 - 60 * s.lampWarm];
+    // the wall: dark limestone, mottled, in a pool of lamplight
+    const wall = canvas(ctx.W / 2, ctx.H / 2), g = wall.getContext("2d"), img = g.createImageData(wall.width, wall.height), px = img.data;
+    const lat = Array.from({ length: 40 * 40 }, () => rand()), vn = (x, y) => {
+      const ix = Math.floor(x), iy = Math.floor(y), u = x - ix, v = y - iy, at = (a, b) => lat[((b % 40) + 40) % 40 * 40 + ((a % 40) + 40) % 40];
+      const su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+      return at(ix, iy) * (1 - su) * (1 - sv) + at(ix + 1, iy) * su * (1 - sv) + at(ix, iy + 1) * (1 - su) * sv + at(ix + 1, iy + 1) * su * sv;
+    };
+    const sig = Math.hypot(ctx.W, ctx.H) * 0.5;
+    for (let y = 0; y < wall.height; y++) for (let x = 0; x < wall.width; x++) {
+      const X = x * 2, Y = y * 2, m = 0.55 * vn(X / 60, Y / 60) + 0.3 * vn(X / 14, Y / 14) + 0.15 * vn(X / 4, Y / 4);
+      const l = 0.18 + 0.95 * Math.exp(-((X - lampX) ** 2 + (Y - lampY) ** 2) / (2 * sig * sig)), base = 30 + 40 * m, o = (y * wall.width + x) * 4;
+      px[o] = base * l * warm[0] / 255 * 1.08; px[o + 1] = base * l * warm[1] / 255; px[o + 2] = base * l * warm[2] / 255 * 0.9; px[o + 3] = 255;
     }
-    const cv = canvas(gw, gh), g = cv.getContext("2d"), img = g.createImageData(gw, gh);
-    for (let i = 0; i < n; i++) { img.data[i * 4] = rock[i * 3]; img.data[i * 4 + 1] = rock[i * 3 + 1]; img.data[i * 4 + 2] = rock[i * 3 + 2]; img.data[i * 4 + 3] = 255; }
     g.putImageData(img, 0, 0);
-    const o = s.ochre, mineral = [228 - 20 * o, 214 - 46 * o, 190 - 74 * o];
-    // the lamp's direction, for the relief: from its side, from above
-    const lx = s.lampSide * 0.5, ly = -0.6, lz = 0.62;
-    return { s, cv, g, img, rock, lamp, warm, mineral, light: [lx, ly, lz], field: null };
+    const o = s.ochre;
+    return { s, wall, lamp: { x: lampX, y: lampY, sig, warm }, tones: [[236 - 16 * o, 222 - 40 * o, 192 - 66 * o], [212 - 20 * o, 190 - 46 * o, 150 - 60 * o]], letters: [], rand, field: null };
+  }
+  const lit = (st, x, y) => 0.35 + 0.8 * Math.exp(-((x - st.lamp.x) ** 2 + (y - st.lamp.y) ** 2) / (2 * st.lamp.sig * st.lamp.sig));
+
+  // The line, laid out a line at a time with room between for ledges and stalactites; each line
+  // stands on the row of its baseline (where most letters end)
+  function words(st, field, ctx) {
+    const T = globalThis.TH, size = field.size, wf = T.wonderFont(ID), n = field.lines.length;
+    // room between the lines for a ledge and the straws under it, spreading down the wall
+    const pitch = Math.max(size * 2.15, Math.min(size * 3, ctx.H * 0.6 / Math.max(1, n)));
+    const mid = ctx.H * 0.53;
+    const built = field.lines.map((line, i) => T.buildWordField(line, { W: ctx.W, H: ctx.H, size, font: wf.font, italic: wf.italic, cell: 1,
+      maxWidth: ctx.W * 4, rand: st.rand, at: { x: ctx.W / 2, y: mid + (i - (n - 1) / 2) * pitch } }));
+    Promise.all(built.map(f => f.ready)).then(fs => {
+      const rows = fs.map(f => {
+        const counts = [];
+        for (let gy = 0; gy < f.gh; gy++) { let c = 0; for (let gx = 0; gx < f.gw; gx++) c += f.mask[gy * f.gw + gx]; counts.push(c); }
+        const most = Math.max(...counts);
+        let base = f.gh - 1;
+        while (base > 0 && counts[base] < 0.35 * most) base--;
+        return { cell: f.cell, gw: f.gw, gh: f.gh, mask: f.mask, rect: f.rect, ledge: f.rect.y + (base + 1) * f.cell };
+      });
+      T.stalagmiteLetters(st.s, rows, Math.max(4, rows[0].rect.y - size * 0.9));
+      st.letters = st.s.rows.map(r => { const c = canvas(r.gw, r.gh); return { c, g: c.getContext("2d"), img: c.getContext("2d").createImageData(r.gw, r.gh) }; });
+      st.field = field;
+    });
   }
 
-  // the mineral, repainted where drops have fallen: calcite over the rock, its relief lit by the lamp
-  function paint(st) {
-    const s = st.s, d = s.dirty;
-    if (!d) return;
-    s.dirty = null;
-    const gw = s.gw, gh = s.gh, M = s.mass, px = st.img.data, [lx, ly, lz] = st.light, mc = st.mineral, w = st.warm;
-    const x0 = Math.max(0, d.x0 - 1), x1 = Math.min(gw - 1, d.x1 + 1), y0 = Math.max(0, d.y0 - 1), y1 = Math.min(gh - 1, d.y1 + 1);
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const i = y * gw + x, m = M[i];
-      let r = st.rock[i * 3], g2 = st.rock[i * 3 + 1], b = st.rock[i * 3 + 2];
-      if (m > 0.004) {
-        const hx = (M[y * gw + Math.min(gw - 1, x + 1)] - M[y * gw + Math.max(0, x - 1)]) * 6;
-        const hy = (M[Math.min(gh - 1, y + 1) * gw + x] - M[Math.max(0, y - 1) * gw + x]) * 6;
-        const nl = Math.sqrt(hx * hx + hy * hy + 1), shade = Math.max(0.25, (-hx * lx - hy * ly + lz) / nl / lz);
-        const a = Math.min(1, m / 0.22), l = st.lamp[i] * shade;
-        r += (mc[0] * l * w[0] - r) * a; g2 += (mc[1] * l * w[1] - g2) * a; b += (mc[2] * l * w[2] - b) * a;
-      }
-      px[i * 4] = r; px[i * 4 + 1] = g2; px[i * 4 + 2] = b;
-    }
-    st.g.putImageData(st.img, 0, 0, x0, y0, x1 - x0 + 1, y1 - y0 + 1);
-  }
-
-  function words(st, field) {
-    let cells = 0; for (let i = 0; i < field.mask.length; i++) cells += field.mask[i];
-    const pts = field.points(Math.max(300, Math.min(2600, Math.round(cells * 0.5))));
-    globalThis.TH.stalagmiteLetters(st.s, pts, field.inside);
-    st.field = field;
-  }
   function step(st, dt) { globalThis.TH.stalagmiteStep(st.s, dt); }
+
+  // the built letter cells not yet painted: calcite, banded layer by layer, lit by the lamp
+  function paint(st) {
+    st.s.rows.forEach((r, i) => {
+      const L = st.letters[i];
+      if (!L) return;
+      let any = false;
+      for (const c of r.cells) {
+        if (!c.built || c.painted) continue;
+        c.painted = true; any = true;
+        const t = st.tones[c.band % 2], l = lit(st, c.x, c.y), v = 0.92 + 0.16 * st.rand(), o = (c.gy * r.gw + c.gx) * 4;
+        L.img.data[o] = t[0] * l * v; L.img.data[o + 1] = t[1] * l * v; L.img.data[o + 2] = t[2] * l * v; L.img.data[o + 3] = 255;
+      }
+      if (any) L.g.putImageData(L.img, 0, 0);
+    });
+  }
+
+  function rock(st, g, x0, x1, y0, y1, ragged) {
+    g.beginPath(); g.moveTo(x0, y0);
+    for (let x = x0; x <= x1; x += 6) g.lineTo(x, y1 + ragged * Math.sin(x * 0.11 + y0) * Math.sin(x * 0.037));
+    g.lineTo(x1, y0); g.closePath();
+  }
+
   function draw(g, st, ctx) {
-    const s = st.s;
-    paint(st);
+    const s = st.s, W = ctx.W;
     g.imageSmoothingEnabled = true;
-    g.drawImage(st.cv, 0, 0, s.gw * s.cell, s.gh * s.cell);
-    // each drop's splash: a faint ring spreading on the wet floor
-    g.lineWidth = 0.7;
-    for (const p of s.splashes) {
-      const u = p.age / 0.35;
-      g.strokeStyle = "rgba(255,240,214," + (0.22 * (1 - u)).toFixed(3) + ")";
-      g.beginPath(); g.arc(p.x, p.y, p.r + 3.5 * u, 0, 6.2832); g.stroke();
+    g.drawImage(st.wall, 0, 0, W, ctx.H);
+    if (!s.rows.length) return;
+    paint(st);
+    const warm = st.lamp.warm.join(",");
+    // the ceiling the top line's stalactites hang from: the same rock, overhanging, in its own shadow
+    const ceil = s.drips.length ? s.drips[0].hang : 0;
+    const over = g.createLinearGradient(0, 0, 0, ceil + 4);
+    over.addColorStop(0, "rgba(6,5,4,0.1)"); over.addColorStop(0.8, "rgba(6,5,4,0.3)"); over.addColorStop(1, "rgba(6,5,4,0.6)");
+    g.fillStyle = over; rock(st, g, 0, W, 0, ceil, 4); g.fill();
+    g.strokeStyle = "rgba(" + warm + ",0.18)"; g.lineWidth = 1; rock(st, g, 0, W, 0, ceil, 4); g.stroke();
+    // ledges, each under its line, the lamp catching their top edges
+    for (const r of s.rows) {
+      const x0 = r.rect.x - 22, x1 = r.rect.x + r.rect.w + 22;
+      g.fillStyle = "rgb(" + [46, 38, 32].map(v => Math.round(v * lit(st, (x0 + x1) / 2, r.ledge))).join(",") + ")";
+      g.beginPath(); g.moveTo(x0, r.ledge + 3); g.quadraticCurveTo(x0 - 6, r.ledge + 7, x0 + 4, r.ledge + 9); g.lineTo(x1 - 4, r.ledge + 9);
+      g.quadraticCurveTo(x1 + 6, r.ledge + 7, x1, r.ledge + 3); g.lineTo(x1, r.ledge); g.lineTo(x0, r.ledge); g.closePath(); g.fill();
+      g.strokeStyle = "rgba(" + warm + ",0.35)"; g.lineWidth = 1; g.beginPath(); g.moveTo(x0, r.ledge + 0.5); g.lineTo(x1, r.ledge + 0.5); g.stroke();
     }
+    // the letters, growing
+    s.rows.forEach((r, i) => { const L = st.letters[i]; if (L) g.drawImage(L.c, r.rect.x, r.rect.y, r.gw * r.cell, r.gh * r.cell); });
+    // the freshest layers, still wet
+    g.globalCompositeOperation = "lighter";
+    for (const f of s.fresh) {
+      const r = s.rows[f.row], a = 0.5 * (1 - f.age / 1.4);
+      g.fillStyle = "rgba(" + warm + "," + a.toFixed(3) + ")";
+      g.fillRect(f.cell.x - r.cell / 2, f.cell.y - r.cell / 2, r.cell, r.cell);
+    }
+    g.globalCompositeOperation = "source-over";
+    // stalactites: soda straws, thin tubes of the same mineral, dimmer than the letters and of every
+    // length (a row of even pale cones is a row of teeth); the drop gathering at each tip
+    for (const d of s.drips) {
+      const l = lit(st, d.x, d.tip) * 0.6, len = d.tip - d.hang, wdt = 0.9 + Math.min(1.6, len * 0.05);
+      g.fillStyle = "rgba(" + st.tones[1].map(v => Math.round(v * l)).join(",") + ",0.85)";
+      g.beginPath(); g.moveTo(d.x - wdt, d.hang); g.lineTo(d.x + wdt, d.hang); g.lineTo(d.x + 0.7, d.tip); g.lineTo(d.x - 0.7, d.tip); g.closePath(); g.fill();
+      if (d.size > 0.3) {
+        g.fillStyle = "rgba(220,232,240,0.55)"; g.beginPath(); g.arc(d.x, d.tip + d.size * 0.8, d.size, 0, 6.2832); g.fill();
+        g.fillStyle = "rgba(" + warm + ",0.9)"; g.beginPath(); g.arc(d.x - d.size * 0.35 * s.lampSide * -1, d.tip + d.size * 0.5, d.size * 0.32, 0, 6.2832); g.fill();
+      }
+    }
+    // drops in the air, drawn out by their speed
+    g.globalCompositeOperation = "lighter";
+    for (const f of s.falling) {
+      const len = Math.min(14, 1.5 + f.vy * 0.018);
+      g.fillStyle = "rgba(" + warm + ",0.7)";
+      g.beginPath(); g.ellipse(f.x, f.y - len / 2, f.size * 0.7, len / 2 + f.size * 0.6, 0, 0, 6.2832); g.fill();
+    }
+    // splashes: a few droplets thrown up and out, falling back
+    for (const p of s.splashes) {
+      const a = p.age;
+      g.fillStyle = "rgba(" + warm + "," + (0.6 * (1 - a / 0.4)).toFixed(3) + ")";
+      for (const k of [-1.4, -0.6, 0.5, 1.3]) g.fillRect(p.x + k * 22 * a - 0.6, p.y - 40 * a + 220 * a * a - 0.6, 1.2, 1.2);
+    }
+    g.globalCompositeOperation = "source-over";
     if (!st.vg) {
-      st.vg = g.createRadialGradient(ctx.W / 2, ctx.H * 0.42, Math.min(ctx.W, ctx.H) * 0.3, ctx.W / 2, ctx.H * 0.42, Math.hypot(ctx.W, ctx.H) * 0.62);
+      st.vg = g.createRadialGradient(W / 2, ctx.H * 0.45, Math.min(W, ctx.H) * 0.3, W / 2, ctx.H * 0.45, Math.hypot(W, ctx.H) * 0.62);
       st.vg.addColorStop(0, "rgba(4,5,10,0)"); st.vg.addColorStop(1, "rgba(4,5,10,0.6)");
     }
-    g.fillStyle = st.vg; g.fillRect(0, 0, ctx.W, ctx.H);
+    g.fillStyle = st.vg; g.fillRect(0, 0, W, ctx.H);
   }
   function touch(st, kind, x, y) { if (kind === "down") globalThis.TH.stalagmiteTouch(st.s, x, y); }
-  // a new size is a new floor; the drips start again over the line
+  // a new size is a new wall; the line is laid out on it again
   function resize(st, ctx) {
     const field = st.field;
     Object.assign(st, create(ctx), { vg: null });
-    if (field) words(st, field);
+    if (field) words(st, field, ctx);
   }
   function info(st) {
     const T = globalThis.TH, s = st.s;
-    return { drips: s.drips.length, drops: s.drops, built: +T.stalagmiteCoverage(s).toFixed(2), splashes: s.splashes.length, cells: [s.gw, s.gh] };
+    return { rows: s.rows.length, drips: s.drips.length, drops: s.drops, falling: s.falling.length, built: +T.stalagmiteCoverage(s).toFixed(2) };
   }
 
   function mount(el, opts) {
@@ -102,11 +161,11 @@
 
   const api = { VISUALS: Object.assign((globalThis.TH && globalThis.TH.VISUALS) || {}, {
     [ID]: { id: ID, name: "Stalagmite", phrase: "Big success is tiny successes building on each other.", mount,
-      // on the floor in the middle of the lamp's pool
+      // on ledges down the middle of the wall (laid out again with room between the lines)
       wordsMode: "become",
       wordsAt: (W, H) => {
-        const wide = W > H, size = wide ? Math.min(40, W / 21) : Math.min(40, W / 9.5);
-        return { size, cell: 1.5, at: { x: W / 2, y: H * (wide ? 0.46 : 0.44) }, maxWidth: W * (wide ? 0.7 : 0.84) };
+        const wide = W > H, size = wide ? Math.min(40, W / 21, H / 9) : Math.min(40, W / 9.5);
+        return { size, cell: 1.5, at: { x: W / 2, y: H * (wide ? 0.5 : 0.48) }, maxWidth: W * (wide ? 0.8 : 0.84) };
       } }
   }) };
   globalThis.TH = Object.assign(globalThis.TH || {}, api);

@@ -5,9 +5,10 @@
   // wetted by water, and the meniscus round a wetted floating thing climbs: it is drawn up the surface's
   // slope to the top of the dome and rests there (the same pull that gathers cereal in a bowl). The
   // further it is from the top, the harder the pull back, and the water's drag slows it, so it returns
-  // smoothly, by itself. A touch sends a ripple out across the water; where the ripple passes the petal,
-  // it shoves it on outward, away from where the ripple began. The petal drifts off, and comes back.
-  // Pure; node-tested.
+  // smoothly, by itself. Now and then, settled, a breath of wind takes it off on its own (a mind wanders
+  // without being sent); a touch sends a ripple out across the water, and where the ripple passes the
+  // petal it shoves it on outward. Either way it drifts off, and comes back. Its wake is kept, a few
+  // seconds of where it has been, so the way out and the way home can be seen. Pure; node-tested.
   const PETAL = {
     MAX_RATE: 0.8,
     PULL: 0.4,           // 1/s^2: the dome's pull back, per px off the top
@@ -17,6 +18,10 @@
     FADE: 1.3,           // s for a ripple to die away (a ring that lingers round the petal is an eye)
     SIZE: 20,            // px: the petal's half-length
     EDGE: 24,            // px: it never comes nearer the edge than this
+    SETTLED: 4,          // px from home that counts as home
+    WANDER: [9, 16],     // s settled before a breath of wind takes it off
+    GUST: [38, 60],      // px/s the breath gives it
+    WAKE: 7,             // s of wake kept on the water
   };
 
   function rnd(s) {
@@ -37,7 +42,7 @@
     const a = rnd(s) * 2 * Math.PI, r = 40 + 50 * rnd(s);
     s.x = s.home.x + Math.cos(a) * r; s.y = s.home.y + Math.sin(a) * r * 0.6;
     s.vx = 0; s.vy = 0; s.angle = rnd(s) * 2 * Math.PI; s.spin = (rnd(s) - 0.5) * 0.3;
-    s.ripples = []; s.t = 0;
+    s.ripples = []; s.t = 0; s.wake = []; s.settled = 0; s.gust = PETAL.WANDER[0] + (PETAL.WANDER[1] - PETAL.WANDER[0]) * rnd(s); s.wandered = 0;
     return s;
   }
 
@@ -57,6 +62,14 @@
       }
     }
     s.ripples = s.ripples.filter(rp => rp.age < PETAL.FADE * 2.5);
+    // settled long enough, a breath of wind takes it off on its own
+    const off = Math.hypot(s.x - s.home.x, s.y - s.home.y);
+    s.settled = off < PETAL.SETTLED && Math.hypot(s.vx, s.vy) < 3 ? s.settled + dt : 0;
+    if (s.settled >= s.gust) {
+      const a = rnd(s) * 2 * Math.PI, k = PETAL.GUST[0] + (PETAL.GUST[1] - PETAL.GUST[0]) * rnd(s);
+      s.vx += Math.cos(a) * k; s.vy += Math.sin(a) * k * 0.8; s.spin += (rnd(s) - 0.5) * 0.4;
+      s.settled = 0; s.gust = PETAL.WANDER[0] + (PETAL.WANDER[1] - PETAL.WANDER[0]) * rnd(s); s.wandered++;
+    }
     // the dome draws it back to the top, the water drags on it
     s.vx += -PETAL.PULL * (s.x - s.home.x) * dt; s.vy += -PETAL.PULL * (s.y - s.home.y) * dt;
     const drag = Math.exp(-PETAL.DRAG * dt);
@@ -70,6 +83,10 @@
     s.spin *= Math.exp(-0.6 * dt);
     s.spin = Math.max(-0.6, Math.min(0.6, s.spin));
     s.angle += s.spin * dt;
+    // its wake: where it has been these last few seconds (only while it moves)
+    const last = s.wake[s.wake.length - 1];
+    if (!last || Math.hypot(s.x - last.x, s.y - last.y) > 2) s.wake.push({ x: s.x, y: s.y, t: s.t });
+    while (s.wake.length && s.t - s.wake[0].t > PETAL.WAKE) s.wake.shift();
   }
 
   const api = { PETAL, petalHome, petalCreate, petalRipple, petalStep };
