@@ -58,28 +58,45 @@ test("the grain is the board's own: fixed per seed, different per seed", () => {
   assert.ok(diff > n * 0.9);
 });
 
-test("measure twice, cut once: the first two touches mark, the third cuts along the mean of the marks", () => {
-  const s = make(3), y = (s.board.y0 + s.board.y1) / 2;
-  assert.strictEqual(L.kerfTouch(s, 120, y), "mark");
+// measure from the left, measure from the right, then cut, waiting for the rule each time
+const measureAndCut = s => {
+  const rule = C.RULE[0] + C.RULE[1] + C.RULE[2] + 0.1;
+  L.kerfTouch(s, 0, 0); run(s, rule);
+  L.kerfTouch(s, 0, 0); run(s, rule);
+  return L.kerfTouch(s, 0, 0);
+};
+
+test("measure twice, from both ends; cut once, through the middle, into two equal halves", () => {
+  const s = make(3), b = s.board, half = s.mm / 2 * s.pxPerMm, rule = C.RULE[0] + C.RULE[1] + C.RULE[2] + 0.1;
+  assert.strictEqual(L.kerfTouch(s, 260, 100), "measure");
+  assert.strictEqual(L.kerfTouch(s, 50, 100), "busy", "one measurement at a time");
+  run(s, rule);
+  assert.strictEqual(s.marks.length, 1);
   assert.strictEqual(s.cut, null);
-  assert.strictEqual(L.kerfTouch(s, 126, y), "mark");
-  assert.strictEqual(s.cut, null);
-  assert.deepStrictEqual(s.marks.map(m => m.x), [120, 126]);
-  assert.strictEqual(L.kerfTouch(s, 260, y), "cut");
-  assert.ok(s.cut && s.cut.x === 123, "along the mean of the marks, not where the third touch fell: " + (s.cut && s.cut.x));
+  assert.strictEqual(L.kerfTouch(s, 10, 300), "measure");
+  run(s, rule);
+  assert.deepStrictEqual(s.marks.map(m => m.from), ["left", "right"]);
+  // the same length from each end, and the two marks agree: the board is symmetric about them
+  assert.ok(Math.abs((s.marks[0].x - b.x0) - half) < 1e-9 && Math.abs((b.x1 - s.marks[1].x) - half) < 1e-9);
+  assert.ok(Math.abs(s.marks[0].x - s.marks[1].x) < 1e-9, "the two measurements agree");
+  assert.strictEqual(L.kerfTouch(s, 30, 40), "cut", "wherever the third touch falls");
+  assert.ok(Math.abs((s.cut.x - b.x0) - (b.x1 - s.cut.x)) < 1e-9, "two equal halves");
+  run(s, C.SAW + 0.2);
+  assert.strictEqual(L.kerfTouch(s, 100, 100), "done", "cut once");
+  assert.strictEqual(s.cuts.length, 0);
 });
 
 test("nothing moves until the saw does", () => {
-  const s = make(4), d0 = dust(s), y = (s.board.y0 + s.board.y1) / 2;
-  L.kerfTouch(s, 100, y); run(s, 1);
-  L.kerfTouch(s, 104, y); run(s, 1);
+  const s = make(4), d0 = dust(s), rule = C.RULE[0] + C.RULE[1] + C.RULE[2] + 0.1;
+  L.kerfTouch(s, 100, 0); run(s, rule);
+  L.kerfTouch(s, 104, 0); run(s, rule);
   assert.strictEqual(dust(s), d0);
   assert.strictEqual(s.grains.length, 0);
 });
 
 test("the sawdust falls with gravity and comes to rest", () => {
-  const s = make(5), y = (s.board.y0 + s.board.y1) / 2;
-  L.kerfTouch(s, 140, y); L.kerfTouch(s, 146, y); L.kerfTouch(s, 146, y);
+  const s = make(5);
+  assert.strictEqual(measureAndCut(s), "cut");
   let seen = 0;
   const lastY = new Map();
   for (let k = 0; k < 30 * 4; k++) {
@@ -101,8 +118,7 @@ test("the line shows only where the dust has gone, and all of it once the board 
   const s = make(6);
   lettered(s);
   assert.ok(L.kerfLettersShown(s) < 0.05, "hidden under the dust at first");
-  const y = (s.board.y0 + s.board.y1) / 2;
-  L.kerfTouch(s, 150, y); L.kerfTouch(s, 154, y); L.kerfTouch(s, 154, y);
+  assert.strictEqual(measureAndCut(s), "cut");
   let t10 = null, t90 = null;
   for (let k = 0; k < 30 * 20; k++) {
     L.kerfStep(s, 1 / 30);
