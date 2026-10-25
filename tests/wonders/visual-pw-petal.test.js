@@ -68,8 +68,24 @@ test("unforced, it comes back to the top of the dome", () => {
   run(s, 2);
   const away = off(s);
   assert.ok(away > 10, "it was sent off: " + away);
-  run(s, 25);
-  assert.ok(off(s) < 5, "back: " + off(s));
+  let closest = Infinity;
+  for (let k = 0; k < 30 * 25; k++) { L.petalStep(s, 1 / 30); closest = Math.min(closest, off(s)); }
+  assert.ok(closest < 5, "back: " + closest);
+});
+
+test("left settled, it wanders off by itself, and comes home again, its wake showing the way", () => {
+  const s = make(6);
+  let far = 0, home = 0, wake = 0;
+  for (let k = 0; k < 30 * 60; k++) {
+    L.petalStep(s, 1 / 30);
+    if (s.wandered) { far = Math.max(far, off(s)); if (far > 20 && off(s) < C.SETTLED) home++; }
+    wake = Math.max(wake, s.wake.length);
+    assert.ok(!s.wake.length || s.t - s.wake[0].t <= C.WAKE + 1e-9, "only the last few seconds");
+  }
+  assert.ok(s.wandered >= 1, "a breath of wind took it");
+  assert.ok(far > 20, "it went somewhere: " + far);
+  assert.ok(home > 0, "and came home");
+  assert.ok(wake > 10, "out on its wander, its wake shows where it has been: " + wake);
 });
 
 test("it never leaves the pool", () => {
